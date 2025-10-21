@@ -16,6 +16,7 @@
 #include "Widgets/SWindow.h"
 #include "Widgets/SBoxPanel.h"
 #include "Animation/AnimSequence.h"
+#include "Editor.h"
 #include "SeqQueue.h"
 #include "SQueueWindow.h"
 

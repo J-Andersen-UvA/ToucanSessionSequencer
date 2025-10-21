@@ -1,4 +1,5 @@
 ﻿using UnrealBuildTool;
+using UnrealBuildTool.Rules;
 
 public class ToucanMidiSequencer : ModuleRules
 {
@@ -7,7 +8,6 @@ public class ToucanMidiSequencer : ModuleRules
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Slate", "SlateCore" });
         PrivateDependencyModuleNames.AddRange(new[] {
-            "Slate", "SlateCore",
             "EditorSubsystem",
             "ToolMenus",
             "UnrealEd",
@@ -18,7 +18,8 @@ public class ToucanMidiSequencer : ModuleRules
             "Projects",
             "InputCore",
             "Kismet",
-            "AnimGraphRuntime"
+            "AnimGraphRuntime",
+            "EditorScriptingUtilities"
         });
     }
 }

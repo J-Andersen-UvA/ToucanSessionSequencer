@@ -6,6 +6,9 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Views/STableRow.h"
 #include "Widgets/Text/STextBlock.h"
+#include "EditorAssetLibrary.h"
+#include "Editor.h"
+#include "EditorStyleSet.h"
 
 void SQueueWindow::Construct(const FArguments&)
 {
@@ -40,36 +43,66 @@ void SQueueWindow::Refresh()
 TSharedRef<ITableRow> SQueueWindow::OnMakeRow(
     TSharedPtr<FQueuedAnim> Item, const TSharedRef<STableViewBase>& Owner)
 {
-    return SNew(STableRow<TSharedPtr<FQueuedAnim>>, Owner)
-    [
-        SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
-        [
-            SNew(STextBlock).Text(Item.IsValid() ? Item->DisplayName : FText::GetEmpty())
-        ]
-        + SHorizontalBox::Slot().AutoWidth()
-        [
-            SNew(SButton)
-            .Text(FText::FromString(TEXT("Remove")))
-            .OnClicked_Lambda([this, Item]()
+    FSlateColor TextColor = FSlateColor::UseForeground();
+    FText ExtraText = FText::GetEmpty();
+
+    if (Item.IsValid())
+    {
+        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+        if (Asset)
+        {
+            // Read the "Processed" metadata tag
+            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
+
+            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
             {
-                int32 Index = INDEX_NONE;
-                const auto& All = FSeqQueue::Get().GetAll();
-                if (Item.IsValid())
-                {
-                    // find by path
-                    for (int32 i=0;i<All.Num();++i)
-                    {
-                        if (All[i].Path == Item->Path) { Index = i; break; }
-                    }
-                }
-                if (Index != INDEX_NONE)
-                {
-                    FSeqQueue::Get().RemoveAt(Index);
-                    Refresh();
-                }
-                return FReply::Handled();
-            })
-        ]
-    ];
+                TextColor = FSlateColor(FLinearColor::Red);
+                ExtraText = FText::FromString(TEXT(" (Already processed?)"));
+            }
+        }
+    }
+
+
+    return SNew(STableRow<TSharedPtr<FQueuedAnim>>, Owner)
+        [
+            SNew(SHorizontalBox)
+                + SHorizontalBox::Slot()
+                .FillWidth(1.f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(STextBlock)
+                        .Text(Item.IsValid()
+                            ? FText::Format(FText::FromString("{0}{1}"), Item->DisplayName, ExtraText)
+                            : FText::GetEmpty())
+                        .ColorAndOpacity(TextColor)
+                ]
+            + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Remove")))
+                        .OnClicked_Lambda([this, Item]()
+                            {
+                                int32 Index = INDEX_NONE;
+                                const auto& All = FSeqQueue::Get().GetAll();
+                                if (Item.IsValid())
+                                {
+                                    for (int32 i = 0; i < All.Num(); ++i)
+                                    {
+                                        if (All[i].Path == Item->Path)
+                                        {
+                                            Index = i;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (Index != INDEX_NONE)
+                                {
+                                    FSeqQueue::Get().RemoveAt(Index);
+                                    Refresh();
+                                }
+                                return FReply::Handled();
+                            })
+                ]
+        ];
 }
