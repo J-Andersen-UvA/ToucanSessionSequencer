@@ -18,6 +18,7 @@
 #include "Animation/AnimSequence.h"
 #include "Editor.h"
 #include "SeqQueue.h"
+#include "SEditingSessionWindow.h"
 #include "SQueueWindow.h"
 
 static const FName ToucanQueueTabName(TEXT("ToucanQueueControls"));
@@ -150,37 +151,7 @@ private:
     {
         return SNew(SDockTab).TabRole(ETabRole::NomadTab)
         [
-            SNew(SBorder).Padding(8)
-            [
-                SNew(SVerticalBox)
-
-                // Editing Session
-                +SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)
-                [
-                    SNew(SButton)
-                        .Text(FText::FromString(TEXT("Editing Session")))
-                        .OnClicked_Lambda([this]()
-                        {
-                            auto Win = SNew(SWindow)
-                                .Title(FText::FromString(TEXT("Toucan – Editing Session")))
-                                .ClientSize(FVector2D(680, 520))
-                                .SupportsMaximize(false)
-                                .SupportsMinimize(false);
-
-                            // Temporary placeholder (will be replaced with SEditingSessionWindow)
-                            Win->SetContent(
-                                SNew(SBorder).Padding(8)
-                                [
-                                    SNew(STextBlock)
-                                        .Text(FText::FromString(TEXT("Editing Session — placeholder. Will display session data here.")))
-                                ]
-                            );
-
-                            FSlateApplication::Get().AddWindow(Win);
-                            return FReply::Handled();
-                        })
-                ]
-            ]
+            SNew(SEditingSessionWindow)
         ];
     }
 
