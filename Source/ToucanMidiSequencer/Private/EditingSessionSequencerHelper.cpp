@@ -2,6 +2,8 @@
 #include "Animation/SkeletalMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "UObject/Package.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "MovieScene.h"
 #include "Tracks/MovieSceneSkeletalAnimationTrack.h"
 #include "LevelSequence.h"
@@ -60,12 +62,30 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
 
     if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
-        // Add skelmesh to the sequencer
-        FGuid BindingID = MovieScene->AddPossessable(MeshActor->GetActorLabel(), MeshActor->GetClass());
-        LevelSequence->BindPossessableObject(BindingID, *MeshActor, World);
+        // Try to find an existing binding for this actor
+        FGuid BindingID;
+        for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+        {
+            if (Binding.GetName() == MeshActor->GetActorLabel())
+            {
+                BindingID = Binding.GetObjectGuid();
+                UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing existing possessable for %s"), *MeshActor->GetName());
+                break;
+            }
+        }
+
+        // If not found, create one
+        if (!BindingID.IsValid())
+        {
+            FGuid NewBindingID = MovieScene->AddPossessable(MeshActor->GetActorLabel(), MeshActor->GetClass());
+            LevelSequence->BindPossessableObject(NewBindingID, *MeshActor, World);
+            BindingID = NewBindingID;
+
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created new possessable for %s"), *MeshActor->GetName());
+        }
 
         // Set the anim track and length
-        AddAnimationTrack(LevelSequence, Animation);
+        AddAnimationTrack(LevelSequence, Animation, BindingID);
 
         const double Length = Animation->GetPlayLength();
         const double FrameRate = Animation->GetSamplingFrameRate().AsDecimal();
@@ -81,35 +101,51 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
 
 ULevelSequence* FEditingSessionSequencerHelper::CreateOrLoadLevelSequence()
 {
-    const FString FolderPath = TEXT("/Game/ToucanTemp");
+    const FString AssetPath = TEXT("/Game/ToucanTemp");
     const FString AssetName  = TEXT("EditingSession_Sequence");
-    const FString FullPath   = FolderPath + TEXT("/") + AssetName;
+    FString PackagePath = AssetPath / AssetName;
+    FString PackageName = FString::Printf(TEXT("%s/%s"), *AssetPath, *AssetName);
 
-    // Try to load existing sequence
-    if (ULevelSequence* Existing = Cast<ULevelSequence>(StaticLoadObject(ULevelSequence::StaticClass(), nullptr, *FullPath)))
+    // Make sure /Game path is correct (avoid /Game//Game/)
+    PackageName = PackageName.Replace(TEXT("//"), TEXT("/"));
+
+    // Try to find an existing sequence first
+    ULevelSequence* Existing = LoadObject<ULevelSequence>(nullptr, *PackageName);
+    if (Existing)
     {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded existing sequence: %s"), *PackageName);
         return Existing;
     }
 
-    // Ensure the folder exists
-    if (!UEditorAssetLibrary::DoesDirectoryExist(FolderPath))
+    // Otherwise create new package and asset
+    UPackage* Package = CreatePackage(*PackageName);
+    Package->FullyLoad();
+
+    ULevelSequence* NewSequence = NewObject<ULevelSequence>(
+        Package,
+        ULevelSequence::StaticClass(),
+        *AssetName,
+        RF_Public | RF_Standalone
+    );
+
+    // Ensure it has a MovieScene
+    if (!NewSequence->GetMovieScene())
     {
-        UEditorAssetLibrary::MakeDirectory(FolderPath);
+        UMovieScene* MovieScene = NewObject<UMovieScene>(NewSequence, NAME_None, RF_Transactional);
+        NewSequence->Initialize();
+        NewSequence->MovieScene = MovieScene;
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Created new MovieScene manually."));
     }
 
-    // Create with factory -> initializes MovieScene correctly
-    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-    ULevelSequence* NewAsset = CreateLevelSequenceAsset(FolderPath, AssetName);
+    // Register with the asset registry so it appears in Content Browser
+    FAssetRegistryModule::AssetCreated(NewSequence);
 
-    if (NewAsset)
-    {
-        // Touch the MovieScene so it's guaranteed to exist
-        if (!NewAsset->GetMovieScene())
-        {
-            UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] LevelSequence has no MovieScene after creation."));
-        }
-    }
-    return NewAsset;
+    // Mark as dirty so it will be saved
+    Package->MarkPackageDirty();
+    NewSequence->MarkPackageDirty();
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created new Level Sequence: %s"), *PackageName);
+    return NewSequence;
 }
 
 ULevelSequence* FEditingSessionSequencerHelper::CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName)
@@ -180,43 +216,64 @@ ASkeletalMeshActor* FEditingSessionSequencerHelper::SpawnOrFindSkeletalMeshActor
     return MeshActor;
 }
 
-void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation)
+void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID)
 {
     if (!LevelSequence || !Animation)
         return;
 
-    if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
+    UMovieScene* MovieScene = LevelSequence->GetMovieScene();
+    if (!MovieScene) return;
+
+    // Remove old animation track if exists
+    for (UMovieSceneTrack* ExistingTrack : MovieScene->GetTracks())
     {
-        // Remove old animation track if exists
-        for (UMovieSceneTrack* ExistingTrack : MovieScene->GetTracks())
+        if (Cast<UMovieSceneSkeletalAnimationTrack>(ExistingTrack))
         {
-            if (Cast<UMovieSceneSkeletalAnimationTrack>(ExistingTrack))
-            {
-                MovieScene->RemoveTrack(*ExistingTrack);
-                break;
-            }
+            MovieScene->RemoveTrack(*ExistingTrack);
+            break;
         }
+    }
 
-        UMovieSceneSkeletalAnimationTrack* AnimTrack = MovieScene->AddTrack<UMovieSceneSkeletalAnimationTrack>();
-        if (AnimTrack)
-        {
-            UMovieSceneSkeletalAnimationSection* AnimSection =
-                Cast<UMovieSceneSkeletalAnimationSection>(AnimTrack->CreateNewSection());
+    FMovieSceneBinding* Binding = MovieScene->FindBinding(BindingID);
+    if (!Binding) return;
 
-            if (AnimSection)
-            {
-                AnimTrack->AddSection(*AnimSection);
+    UMovieSceneSkeletalAnimationTrack* AnimTrack = Cast<UMovieSceneSkeletalAnimationTrack>(
+        MovieScene->AddTrack(UMovieSceneSkeletalAnimationTrack::StaticClass(), BindingID)
+    );
 
-                AnimSection->Params.Animation = Animation;
+    if (!AnimTrack)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create animation track."));
+        return;
+    }
 
-                const double Length = Animation->GetPlayLength();
-                const double FrameRate = Animation->GetSamplingFrameRate().AsDecimal();
-                const int32 NumFrames = static_cast<int32>(Length * FrameRate);
-                AnimSection->SetRange(TRange<FFrameNumber>::Inclusive(0, NumFrames));
+    // Ensure proper frame rate and resolution
+    const FFrameRate TickRes = MovieScene->GetTickResolution();
+    const FFrameRate DisplayRate = MovieScene->GetDisplayRate();
+    const double FrameTickValue = TickRes.AsDecimal() / DisplayRate.AsDecimal();
 
-                UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added animation '%s' to Level Sequence."), *Animation->GetName());
-            }
-        }
+    UMovieSceneSection* Section = AnimTrack->AddNewAnimation(FFrameNumber(0), Animation);
+
+    if (Section)
+    {
+        // Adjust section length
+        const double LengthSeconds = Animation->GetPlayLength();
+        const int32 EndFrame = TickRes.AsFrameNumber(LengthSeconds).Value;
+
+        Section->SetRange(TRange<FFrameNumber>::Inclusive(0, FFrameNumber(EndFrame)));
+
+        // Force track refresh
+        AnimTrack->Modify();
+        AnimTrack->UpdateEasing();
+        MovieScene->Modify();
+        Section->Modify();
+        LevelSequence->MarkPackageDirty();
+
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added animation '%s' (%f s) to Level Sequence."), *Animation->GetName(), LengthSeconds);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] AddNewAnimation returned null. Possibly invalid binding or uninitialized sequence."));
     }
 }
 
@@ -253,7 +310,6 @@ void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSeque
         return;
     }
 
-    // 🔹 Find the binding for this actor
     FGuid BindingID = LevelSequence->FindBindingFromObject(MeshActor, World);
     if (!BindingID.IsValid())
     {
@@ -261,10 +317,8 @@ void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSeque
         return;
     }
 
-    // ✅ Wrap the binding in a proxy
     FMovieSceneBindingProxy BindingProxy(BindingID, LevelSequence);
 
-    // 🔹 Add or find the Control Rig track
     TSubclassOf<UControlRig> RigClass = ControlRigAsset->GetClass();
     UMovieSceneTrack* RigTrack = UControlRigSequencerEditorLibrary::FindOrCreateControlRigTrack(
         World, LevelSequence, RigClass, BindingProxy, false);
