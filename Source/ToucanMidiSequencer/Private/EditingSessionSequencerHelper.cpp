@@ -290,21 +290,25 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
         return;
     }
 
-    // Ensure proper frame rate and resolution
-    const FFrameRate TickRes = MovieScene->GetTickResolution();
-    const FFrameRate DisplayRate = MovieScene->GetDisplayRate();
-    const double FrameTickValue = TickRes.AsDecimal() / DisplayRate.AsDecimal();
-
     UMovieSceneSection* Section = AnimTrack->AddNewAnimation(FFrameNumber(0), Animation);
 
     if (Section)
     {
-        // Adjust section length
+        // --- Match Sequencer frame rate to animation ---
+        const FFrameRate AnimRate = Animation->GetSamplingFrameRate();
+        MovieScene->SetDisplayRate(AnimRate);
+
+        // Reasonable tick resolution (10x higher precision)
+        //const int32 TickHz = FMath::Max((int32)(AnimRate.AsDecimal() * 10), 600);
+        //MovieScene->SetTickResolutionDirectly(FFrameRate(TickHz, 1));
+
+        // --- Adjust section and sequence playback length ---
         const double LengthSeconds = Animation->GetPlayLength();
-        const int32 EndFrame = TickRes.AsFrameNumber(LengthSeconds).Value;
+        const FFrameNumber EndFrame = MovieScene->GetTickResolution().AsFrameNumber(LengthSeconds);
 
-        Section->SetRange(TRange<FFrameNumber>::Inclusive(0, FFrameNumber(EndFrame)));
-
+        Section->SetRange(TRange<FFrameNumber>::Inclusive(FFrameNumber(0), EndFrame));
+        MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Inclusive(FFrameNumber(0), EndFrame));
+        
         // Force track refresh
         AnimTrack->Modify();
         AnimTrack->UpdateEasing();
@@ -312,7 +316,7 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
         Section->Modify();
         LevelSequence->MarkPackageDirty();
 
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added animation '%s' (%f s) to Level Sequence."), *Animation->GetName(), LengthSeconds);
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added animation '%s' (%d endrame) to Level Sequence."), *Animation->GetName(), EndFrame.Value);
     }
     else
     {
