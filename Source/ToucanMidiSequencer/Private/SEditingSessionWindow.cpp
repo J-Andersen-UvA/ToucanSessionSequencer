@@ -7,6 +7,7 @@
 #include "Widgets/SBoxPanel.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Editor.h"
 #include "EditorAssetLibrary.h"
 
@@ -67,6 +68,44 @@ void SEditingSessionWindow::Construct(const FArguments&)
             ]
         ]
     ];
+
+    LoadSettings();
+}
+
+void SEditingSessionWindow::LoadSettings()
+{
+#if WITH_EDITOR
+    const FString& Ini = GEditorPerProjectIni;
+#else
+    const FString& Ini = GGameIni;
+#endif
+
+    FString MeshPath, RigPath;
+    GConfig->GetString(CfgSection, MeshKey, MeshPath, Ini);
+    GConfig->GetString(CfgSection, RigKey, RigPath, Ini);
+
+    if (!MeshPath.IsEmpty())
+        SelectedMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(MeshPath));
+
+    if (!RigPath.IsEmpty())
+        SelectedRig = TSoftObjectPtr<UObject>(FSoftObjectPath(RigPath));
+}
+
+void SEditingSessionWindow::SaveSettings() const
+{
+#if WITH_EDITOR
+    const FString& Ini = GEditorPerProjectIni;
+#else
+    const FString& Ini = GGameIni;
+#endif
+
+    if (SelectedMesh.IsValid())
+        GConfig->SetString(CfgSection, MeshKey, *SelectedMesh.ToSoftObjectPath().ToString(), Ini);
+
+    if (SelectedRig.IsValid())
+        GConfig->SetString(CfgSection, RigKey, *SelectedRig.ToSoftObjectPath().ToString(), Ini);
+
+    GConfig->Flush(false, Ini);
 }
 
 void SEditingSessionWindow::RefreshQueue()
@@ -83,16 +122,24 @@ void SEditingSessionWindow::RefreshQueue()
 TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
     TSharedPtr<FQueuedAnim> Item, const TSharedRef<STableViewBase>& Owner)
 {
-    int32 RowIndex = Rows.IndexOfByKey(Item);
-    FSlateColor RowColor = (RowIndex == CurrentIndex)
-        ? FSlateColor(FLinearColor(0.2f, 0.4f, 1.0f)) // blue highlight
-        : FSlateColor::UseForeground();
-
     return SNew(STableRow<TSharedPtr<FQueuedAnim>>, Owner)
     [
         SNew(STextBlock)
-        .Text(Item->DisplayName)
-        .ColorAndOpacity(RowColor)
+            .Text_Lambda([this, Item]() {
+            int32 RowIndex = Rows.IndexOfByKey(Item);
+            FString Label = Item->DisplayName.ToString();
+            if (RowIndex == CurrentIndex)
+            {
+                Label += TEXT("  <-- editing");
+            }
+            return FText::FromString(Label);
+                })
+            .ColorAndOpacity_Lambda([this, Item]() {
+            int32 RowIndex = Rows.IndexOfByKey(Item);
+            return (RowIndex == CurrentIndex)
+                ? FLinearColor(0.2f, 0.4f, 1.0f)
+                : FLinearColor::White;
+                })
     ];
 }
 
@@ -110,7 +157,11 @@ FReply SEditingSessionWindow::OnSelectSkeletalMesh()
         FOnAssetsChosenForOpen::CreateLambda([this](const TArray<FAssetData>& Selected)
         {
             if (Selected.Num() > 0)
+            {
                 SelectedMesh = Cast<USkeletalMesh>(Selected[0].GetAsset());
+                SaveSettings();
+            }
+
         }),
         FOnAssetDialogCancelled::CreateLambda([] {})
     );
@@ -132,7 +183,10 @@ FReply SEditingSessionWindow::OnSelectRig()
         FOnAssetsChosenForOpen::CreateLambda([this](const TArray<FAssetData>& Selected)
         {
             if (Selected.Num() > 0)
+            {
                 SelectedRig = Selected[0].GetAsset();
+                SaveSettings();
+            }
         }),
         FOnAssetDialogCancelled::CreateLambda([] {})
     );
@@ -148,7 +202,7 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
     CurrentIndex = (CurrentIndex + 1) % All.Num();
     if (ListView.IsValid())
-        ListView->RequestListRefresh();
+        ListView->RebuildList();
 
     // Later we’ll trigger event/midi binding here
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] LoadNextAnimation called, new index: %d"), CurrentIndex);

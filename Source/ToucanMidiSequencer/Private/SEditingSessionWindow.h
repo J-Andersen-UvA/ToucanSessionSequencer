@@ -26,12 +26,19 @@ private:
     FReply OnLoadNextAnimation();
 
 private:
-    // --- data ---
     TArray<TSharedPtr<FQueuedAnim>> Rows;
     TSharedPtr<SListView<TSharedPtr<FQueuedAnim>>> ListView;
 
-    int32 CurrentIndex = 0; // highlighted animation index
+    int32 CurrentIndex = 0;
 
     TSoftObjectPtr<USkeletalMesh> SelectedMesh;
-    TSoftObjectPtr<UObject> SelectedRig; // generic placeholder (ControlRig or BP)
+    TSoftObjectPtr<UObject> SelectedRig;
+
+    // Config keys
+    static constexpr const TCHAR* CfgSection = TEXT("ToucanEditingSession");
+    static constexpr const TCHAR* MeshKey = TEXT("LastSelectedMesh");
+    static constexpr const TCHAR* RigKey = TEXT("LastSelectedRig");
+
+    void LoadSettings();
+    void SaveSettings() const;
 };
