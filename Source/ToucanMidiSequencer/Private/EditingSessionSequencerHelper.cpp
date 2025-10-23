@@ -2,22 +2,16 @@
 #include "Animation/SkeletalMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
-
 #include "MovieScene.h"
 #include "Tracks/MovieSceneSkeletalAnimationTrack.h"
-//#include "MovieSceneSkeletalAnimationSection.h"
-//#include "MovieSceneControlRigParameterTrack.h"
-//#include "MovieSceneControlRigParameterSection.h"
 #include "LevelSequence.h"
-//#include "LevelSequenceBindingReferences.h"
-//#include "LevelSequenceEditorBlueprintLibrary.h"
 #include "ControlRig.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
+#include "AssetTypeCategories.h"
 #include "Editor.h"
-//#include "BlueprintFunctionLibrary.h"
 #include "ControlRigSequencerEditorLibrary.h"
-
+#include "EditorAssetLibrary.h"
 
 void FEditingSessionSequencerHelper::LoadNextAnimation(
     TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
@@ -83,9 +77,6 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation '%s' into Level Sequence."), *Animation->GetName());
 }
 
-//
-// ─── Create Or Load Sequence ─────────────────────────────────────────────────────
-//
 ULevelSequence* FEditingSessionSequencerHelper::CreateOrLoadLevelSequence()
 {
     const FString FolderPath = TEXT("/Game/ToucanTemp");
@@ -98,15 +89,68 @@ ULevelSequence* FEditingSessionSequencerHelper::CreateOrLoadLevelSequence()
         return Existing;
     }
 
-    // Create new one if not found
+    // Ensure the folder exists
+    if (!UEditorAssetLibrary::DoesDirectoryExist(FolderPath))
+    {
+        UEditorAssetLibrary::MakeDirectory(FolderPath);
+    }
+
+    // Create with factory -> initializes MovieScene correctly
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-    UObject* NewAsset = AssetTools.CreateAsset(AssetName, FolderPath, ULevelSequence::StaticClass(), nullptr);
-    return Cast<ULevelSequence>(NewAsset);
+    ULevelSequence* NewAsset = CreateLevelSequenceAsset(FolderPath, AssetName);
+
+    if (NewAsset)
+    {
+        // Touch the MovieScene so it's guaranteed to exist
+        if (!NewAsset->GetMovieScene())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] LevelSequence has no MovieScene after creation."));
+        }
+    }
+    return NewAsset;
 }
 
-//
-// ─── Spawn Or Find Skeletal Mesh Actor ───────────────────────────────────────────
-//
+ULevelSequence* FEditingSessionSequencerHelper::CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName)
+{
+    const FString PackagePath = FolderPath / AssetName;
+    FString UniquePackageName, UniqueAssetName;
+    FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+
+    if (!FPackageName::DoesPackageExist(FolderPath))
+    {
+        AssetToolsModule.Get().CreateUniqueAssetName(
+            FolderPath + TEXT("/") + AssetName,
+            TEXT(""),
+            UniquePackageName,
+            UniqueAssetName
+        );
+    }
+
+    IAssetTools& AssetTools = AssetToolsModule.Get();
+    UObject* NewAsset = AssetTools.CreateAsset(
+        *UniqueAssetName,
+        *FolderPath,
+        ULevelSequence::StaticClass(),
+        nullptr
+    );
+
+    // We need to add the MovieScene by hand, the factory was removed in some version...
+    ULevelSequence* NewSeq = Cast<ULevelSequence>(NewAsset);
+    if (NewSeq)
+    {
+        if (!NewSeq->GetMovieScene())
+        {
+            UMovieScene* MovieScene = NewObject<UMovieScene>(NewSeq, NAME_None, RF_Transactional);
+            NewSeq->Initialize();
+            NewSeq->MovieScene = MovieScene;
+
+            UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Created new MovieScene manually."));
+        }
+    }
+
+    return NewSeq;
+}
+
 ASkeletalMeshActor* FEditingSessionSequencerHelper::SpawnOrFindSkeletalMeshActor(
     UWorld* World, TSoftObjectPtr<USkeletalMesh> SkeletalMesh)
 {
@@ -134,9 +178,6 @@ ASkeletalMeshActor* FEditingSessionSequencerHelper::SpawnOrFindSkeletalMeshActor
     return MeshActor;
 }
 
-//
-// ─── Add Animation Track ─────────────────────────────────────────────────────────
-//
 void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation)
 {
     if (!LevelSequence || !Animation)

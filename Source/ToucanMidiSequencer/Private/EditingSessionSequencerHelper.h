@@ -24,4 +24,6 @@ private:
     static ASkeletalMeshActor* SpawnOrFindSkeletalMeshActor(UWorld* World, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
     static void AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation);
     static void AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig);
+    static ULevelSequence* CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName);
+
 };
