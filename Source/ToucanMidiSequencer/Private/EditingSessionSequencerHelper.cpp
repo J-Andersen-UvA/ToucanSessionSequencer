@@ -8,11 +8,11 @@
 #include "Tracks/MovieSceneSkeletalAnimationTrack.h"
 #include "LevelSequence.h"
 #include "ControlRig.h"
+#include "ControlRigSequencerEditorLibrary.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
 #include "AssetTypeCategories.h"
 #include "Editor.h"
-#include "ControlRigSequencerEditorLibrary.h"
 #include "EditorAssetLibrary.h"
 
 void FEditingSessionSequencerHelper::LoadNextAnimation(
@@ -63,26 +63,34 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
     if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
         // Try to find an existing binding for this actor
-        FGuid BindingID;
-        for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+        FGuid BindingID = LevelSequence->FindBindingFromObject(MeshActor, World);
+        if (BindingID.IsValid())
         {
-            if (Binding.GetName() == MeshActor->GetActorLabel())
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing existing possessable binding for %s"), *MeshActor->GetName());
+        }
+        else
+        {
+            // Fallback: check by label (rare cases)
+            for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
             {
-                BindingID = Binding.GetObjectGuid();
-                UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing existing possessable for %s"), *MeshActor->GetName());
-                break;
+                const FMovieScenePossessable* Possessable = MovieScene->FindPossessable(Binding.GetObjectGuid());
+                if (Possessable && Possessable->GetName() == MeshActor->GetActorLabel())
+                {
+                    BindingID = Binding.GetObjectGuid();
+                    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Found existing possessable by name for %s"), *MeshActor->GetName());
+                    break;
+                }
+            }
+
+            // Still nothing? Create it once.
+            if (!BindingID.IsValid())
+            {
+                BindingID = MovieScene->AddPossessable(MeshActor->GetActorLabel(), MeshActor->GetClass());
+                LevelSequence->BindPossessableObject(BindingID, *MeshActor, World);
+                UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created new possessable for %s"), *MeshActor->GetName());
             }
         }
 
-        // If not found, create one
-        if (!BindingID.IsValid())
-        {
-            FGuid NewBindingID = MovieScene->AddPossessable(MeshActor->GetActorLabel(), MeshActor->GetClass());
-            LevelSequence->BindPossessableObject(NewBindingID, *MeshActor, World);
-            BindingID = NewBindingID;
-
-            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created new possessable for %s"), *MeshActor->GetName());
-        }
 
         // Set the anim track and length
         AddAnimationTrack(LevelSequence, Animation, BindingID);
@@ -192,13 +200,38 @@ ULevelSequence* FEditingSessionSequencerHelper::CreateLevelSequenceAsset(const F
 ASkeletalMeshActor* FEditingSessionSequencerHelper::SpawnOrFindSkeletalMeshActor(
     UWorld* World, TSoftObjectPtr<USkeletalMesh> SkeletalMesh)
 {
+    if (!World)
+        return nullptr;
+
+    USkeletalMesh* TargetMesh = SkeletalMesh.Get();
     ASkeletalMeshActor* MeshActor = nullptr;
+    
     for (TActorIterator<ASkeletalMeshActor> It(World); It; ++It)
     {
-        if (It->GetName() == TEXT("EditingSession_SkeletalMeshActor"))
+        ASkeletalMeshActor* ExistingActor = *It;
+        if (!ExistingActor || !ExistingActor->GetSkeletalMeshComponent())
+            continue;
+
+        USkeletalMesh* ExistingMesh = ExistingActor->GetSkeletalMeshComponent()->GetSkeletalMeshAsset();
+        if (ExistingMesh == TargetMesh)
         {
-            MeshActor = *It;
+            MeshActor = ExistingActor;
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing SkeletalMeshActor with same mesh: %s"), *ExistingActor->GetName());
             break;
+        }
+    }
+
+    // Fallback
+    if (!MeshActor)
+    {
+        for (TActorIterator<ASkeletalMeshActor> It(World); It; ++It)
+        {
+            if (It->GetName() == TEXT("EditingSession_SkeletalMeshActor"))
+            {
+                MeshActor = *It;
+                UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing EditingSession_SkeletalMeshActor."));
+                break;
+            }
         }
     }
 
@@ -208,9 +241,9 @@ ASkeletalMeshActor* FEditingSessionSequencerHelper::SpawnOrFindSkeletalMeshActor
         MeshActor->SetActorLabel(TEXT("EditingSession_SkeletalMeshActor"));
     }
 
-    if (MeshActor && SkeletalMesh.IsValid())
+    if (MeshActor && TargetMesh)
     {
-        MeshActor->GetSkeletalMeshComponent()->SetSkeletalMesh(SkeletalMesh.Get());
+        MeshActor->GetSkeletalMeshComponent()->SetSkeletalMesh(TargetMesh);
     }
 
     return MeshActor;
@@ -224,18 +257,28 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
     UMovieScene* MovieScene = LevelSequence->GetMovieScene();
     if (!MovieScene) return;
 
-    // Remove old animation track if exists
-    for (UMovieSceneTrack* ExistingTrack : MovieScene->GetTracks())
+    // Find the existing binding by ID
+    FMovieSceneBinding* Binding = MovieScene->FindBinding(BindingID);
+    if (!Binding)
     {
-        if (Cast<UMovieSceneSkeletalAnimationTrack>(ExistingTrack))
-        {
-            MovieScene->RemoveTrack(*ExistingTrack);
-            break;
-        }
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Invalid BindingID when adding animation track."));
+        return;
     }
 
-    FMovieSceneBinding* Binding = MovieScene->FindBinding(BindingID);
-    if (!Binding) return;
+    // Remove old animation tracks bound to this actor only
+    TArray<UMovieSceneTrack*> TracksToRemove;
+    for (UMovieSceneTrack* Track : Binding->GetTracks())
+    {
+        if (Cast<UMovieSceneSkeletalAnimationTrack>(Track))
+        {
+            TracksToRemove.Add(Track);
+        }
+    }
+    for (UMovieSceneTrack* Track : TracksToRemove)
+    {
+        MovieScene->RemoveTrack(*Track);
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Removed old animation track for binding '%s'."), *Binding->GetName());
+    }
 
     UMovieSceneSkeletalAnimationTrack* AnimTrack = Cast<UMovieSceneSkeletalAnimationTrack>(
         MovieScene->AddTrack(UMovieSceneSkeletalAnimationTrack::StaticClass(), BindingID)
@@ -280,12 +323,37 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
 void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig)
 {
     if (!LevelSequence || !Rig.IsValid())
+        if (!LevelSequence || !Rig.IsValid())
+            return;
+
+    UObject* RigObject = Rig.Get();
+    if (!RigObject)
         return;
 
-    UControlRig* ControlRigAsset = Cast<UControlRig>(Rig.Get());
-    if (!ControlRigAsset)
+    UClass* RigClass = nullptr;
+
+    // ✅ Handle both ControlRigBlueprint and ControlRig assets safely
+    if (RigObject->IsA(UControlRig::StaticClass()))
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Selected asset is not a ControlRig."));
+        RigClass = RigObject->GetClass();
+    }
+    else
+    {
+        // Try to access GeneratedClass property via reflection
+        FProperty* GeneratedClassProp = RigObject->GetClass()->FindPropertyByName(TEXT("GeneratedClass"));
+        if (FObjectProperty* ObjProp = CastField<FObjectProperty>(GeneratedClassProp))
+        {
+            UObject* GeneratedClassObj = ObjProp->GetObjectPropertyValue_InContainer(RigObject);
+            if (GeneratedClassObj)
+            {
+                RigClass = Cast<UClass>(GeneratedClassObj);
+            }
+        }
+    }
+
+    if (!RigClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Selected asset is not a valid ControlRig or ControlRigBlueprint."));
         return;
     }
 
@@ -293,7 +361,7 @@ void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSeque
     if (!World)
         return;
 
-    // 🔹 Find our skeletal mesh actor (the possessable)
+    // Find the skeletal mesh actor we’re controlling
     ASkeletalMeshActor* MeshActor = nullptr;
     for (TActorIterator<ASkeletalMeshActor> It(World); It; ++It)
     {
@@ -319,14 +387,13 @@ void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSeque
 
     FMovieSceneBindingProxy BindingProxy(BindingID, LevelSequence);
 
-    TSubclassOf<UControlRig> RigClass = ControlRigAsset->GetClass();
     UMovieSceneTrack* RigTrack = UControlRigSequencerEditorLibrary::FindOrCreateControlRigTrack(
         World, LevelSequence, RigClass, BindingProxy, false);
 
     if (RigTrack)
     {
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added ControlRig '%s' to Level Sequence binding."),
-            *ControlRigAsset->GetName());
+            *RigObject->GetName());
     }
     else
     {
