@@ -393,7 +393,7 @@ void FEditingSessionSequencerHelper::AddRigToSequence(
     // --- Create or reuse the ControlRig track ---
     FMovieSceneBindingProxy BindingProxy(BindingID, LevelSequence);
     UMovieSceneTrack* RigTrack = UControlRigSequencerEditorLibrary::FindOrCreateControlRigTrack(
-        World, LevelSequence, RigClass, BindingProxy, false);
+        World, LevelSequence, RigClass, BindingProxy, true);
 
     if (RigTrack)
     {
