@@ -320,40 +320,34 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
     }
 }
 
-void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig)
+void FEditingSessionSequencerHelper::AddRigToSequence(
+    ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig)
 {
     if (!LevelSequence || !Rig.IsValid())
-        if (!LevelSequence || !Rig.IsValid())
-            return;
+        return;
 
     UObject* RigObject = Rig.Get();
     if (!RigObject)
         return;
 
+    // Determine the ControlRig class from either a ControlRig asset or a ControlRig Blueprint.
     UClass* RigClass = nullptr;
-
-    // ✅ Handle both ControlRigBlueprint and ControlRig assets safely
     if (RigObject->IsA(UControlRig::StaticClass()))
     {
         RigClass = RigObject->GetClass();
     }
     else
     {
-        // Try to access GeneratedClass property via reflection
-        FProperty* GeneratedClassProp = RigObject->GetClass()->FindPropertyByName(TEXT("GeneratedClass"));
-        if (FObjectProperty* ObjProp = CastField<FObjectProperty>(GeneratedClassProp))
+        FProperty* GenClassProp = RigObject->GetClass()->FindPropertyByName(TEXT("GeneratedClass"));
+        if (FObjectProperty* ObjProp = CastField<FObjectProperty>(GenClassProp))
         {
-            UObject* GeneratedClassObj = ObjProp->GetObjectPropertyValue_InContainer(RigObject);
-            if (GeneratedClassObj)
-            {
-                RigClass = Cast<UClass>(GeneratedClassObj);
-            }
+            UObject* GenClassObj = ObjProp->GetObjectPropertyValue_InContainer(RigObject);
+            RigClass = Cast<UClass>(GenClassObj);
         }
     }
-
     if (!RigClass)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Selected asset is not a valid ControlRig or ControlRigBlueprint."));
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Invalid or unsupported rig asset."));
         return;
     }
 
@@ -361,32 +355,43 @@ void FEditingSessionSequencerHelper::AddRigToSequence(ULevelSequence* LevelSeque
     if (!World)
         return;
 
-    // Find the skeletal mesh actor we’re controlling
-    ASkeletalMeshActor* MeshActor = nullptr;
-    for (TActorIterator<ASkeletalMeshActor> It(World); It; ++It)
+    // --- Find the existing SkeletalMeshActor binding in the sequence ---
+    FGuid BindingID;
+    if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
-        if (It->GetName() == TEXT("EditingSession_SkeletalMeshActor"))
+        for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
         {
-            MeshActor = *It;
-            break;
+            const FMovieScenePossessable* Possessable = MovieScene->FindPossessable(Binding.GetObjectGuid());
+            if (Possessable && Possessable->GetPossessedObjectClass() == ASkeletalMeshActor::StaticClass())
+            {
+                BindingID = Binding.GetObjectGuid();
+                break;
+            }
         }
     }
-
-    if (!MeshActor)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No SkeletalMeshActor found for rig binding."));
-        return;
-    }
-
-    FGuid BindingID = LevelSequence->FindBindingFromObject(MeshActor, World);
     if (!BindingID.IsValid())
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] SkeletalMeshActor not bound to sequence — cannot add rig."));
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No SkeletalMeshActor binding found in sequence."));
         return;
     }
 
-    FMovieSceneBindingProxy BindingProxy(BindingID, LevelSequence);
+    // --- Resolve the actual bound actor instance (the one Sequencer uses) ---
+    ASkeletalMeshActor* MeshActor = nullptr;
+    {
+        TArray<UObject*, TInlineAllocator<1>> BoundObjs;
+        UE::UniversalObjectLocator::FResolveParams ResolveParams(World);
+        LevelSequence->LocateBoundObjects(BindingID, ResolveParams, BoundObjs);
+        if (BoundObjs.Num() > 0)
+            MeshActor = Cast<ASkeletalMeshActor>(BoundObjs[0]);
+    }
+    if (!MeshActor)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Could not locate bound SkeletalMeshActor instance."));
+        return;
+    }
 
+    // --- Create or reuse the ControlRig track ---
+    FMovieSceneBindingProxy BindingProxy(BindingID, LevelSequence);
     UMovieSceneTrack* RigTrack = UControlRigSequencerEditorLibrary::FindOrCreateControlRigTrack(
         World, LevelSequence, RigClass, BindingProxy, false);
 
