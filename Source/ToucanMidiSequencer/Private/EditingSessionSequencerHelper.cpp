@@ -37,7 +37,6 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         return;
     }
 
-    // Open in Sequencer
     if (UAssetEditorSubsystem* EditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
     {
         EditorSubsystem->OpenEditorForAsset(LevelSequence);
@@ -59,12 +58,15 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         return;
     }
 
-    // Add animation to the sequence
-    AddAnimationTrack(LevelSequence, Animation);
-
-    // Set playback range to match animation length
     if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
+        // Add skelmesh to the sequencer
+        FGuid BindingID = MovieScene->AddPossessable(MeshActor->GetActorLabel(), MeshActor->GetClass());
+        LevelSequence->BindPossessableObject(BindingID, *MeshActor, World);
+
+        // Set the anim track and length
+        AddAnimationTrack(LevelSequence, Animation);
+
         const double Length = Animation->GetPlayLength();
         const double FrameRate = Animation->GetSamplingFrameRate().AsDecimal();
         const int32 NumFrames = static_cast<int32>(Length * FrameRate);
