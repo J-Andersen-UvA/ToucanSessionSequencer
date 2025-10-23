@@ -8,8 +8,10 @@
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
 #include "Misc/ConfigCacheIni.h"
+#include "EditingSessionSequencerHelper.h"
 #include "Editor.h"
 #include "EditorAssetLibrary.h"
+#include "UObject/TopLevelAssetPath.h"
 
 void SEditingSessionWindow::Construct(const FArguments&)
 {
@@ -174,20 +176,23 @@ FReply SEditingSessionWindow::OnSelectRig()
     FContentBrowserModule& CB = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
 
     FOpenAssetDialogConfig Config;
-    Config.DialogTitleOverride = FText::FromString(TEXT("Select Rig Blueprint"));
-    Config.AssetClassNames.Add(UBlueprint::StaticClass()->GetClassPathName());
+    Config.DialogTitleOverride = FText::FromString(TEXT("Select Control Rig"));
+
+    Config.AssetClassNames.Add(FTopLevelAssetPath(TEXT("/Script/ControlRig"), TEXT("ControlRigBlueprint")));
+    Config.AssetClassNames.Add(FTopLevelAssetPath(TEXT("/Script/ControlRigDeveloper"), TEXT("ControlRigBlueprint")));
+
     Config.bAllowMultipleSelection = false;
 
     CB.Get().CreateOpenAssetDialog(
         Config,
         FOnAssetsChosenForOpen::CreateLambda([this](const TArray<FAssetData>& Selected)
-        {
-            if (Selected.Num() > 0)
             {
-                SelectedRig = Selected[0].GetAsset();
-                SaveSettings();
-            }
-        }),
+                if (Selected.Num() > 0)
+                {
+                    SelectedRig = Selected[0].GetAsset(); // store the blueprint asset
+                    SaveSettings();
+                }
+            }),
         FOnAssetDialogCancelled::CreateLambda([] {})
     );
 
@@ -200,11 +205,26 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
     if (All.Num() == 0)
         return FReply::Handled();
 
-    CurrentIndex = (CurrentIndex + 1) % All.Num();
+    // Determine next index
+    if (CurrentIndex == INDEX_NONE)
+        CurrentIndex = 0;
+    else
+        CurrentIndex = (CurrentIndex + 1) % All.Num();
+
     if (ListView.IsValid())
         ListView->RebuildList();
 
-    // Later we’ll trigger event/midi binding here
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] LoadNextAnimation called, new index: %d"), CurrentIndex);
+    // Load animation asset
+    const FQueuedAnim& SelectedAnim = All[CurrentIndex];
+    UAnimSequence* Anim = Cast<UAnimSequence>(SelectedAnim.Path.TryLoad());
+    if (!Anim)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation asset."));
+        return FReply::Handled();
+    }
+
+    // Delegate to helper
+    FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, SelectedRig, Anim);
+
     return FReply::Handled();
 }

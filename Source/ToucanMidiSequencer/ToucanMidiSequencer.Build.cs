@@ -7,6 +7,16 @@ public class ToucanMidiSequencer : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Slate", "SlateCore" });
+        PublicDependencyModuleNames.AddRange(new string[]
+        {
+            "LevelSequence",
+            "MovieScene",
+            "MovieSceneTracks",
+            "ControlRig",
+            "ControlRigEditor",
+            "Sequencer",
+        });
+
         PrivateDependencyModuleNames.AddRange(new[] {
             "EditorSubsystem",
             "ToolMenus",
@@ -19,7 +29,8 @@ public class ToucanMidiSequencer : ModuleRules
             "InputCore",
             "Kismet",
             "AnimGraphRuntime",
-            "EditorScriptingUtilities"
+            "EditorScriptingUtilities",
+            "MovieSceneTools",
         });
     }
 }
