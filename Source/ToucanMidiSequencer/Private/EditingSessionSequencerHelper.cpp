@@ -87,6 +87,7 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
     if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
         MovieScene->SetDisplayRate(Animation->GetSamplingFrameRate());
+        MovieScene->SetTickResolutionDirectly(Animation->GetSamplingFrameRate());
 
         // Try to find an existing binding for this actor
         FGuid BindingID = FEditingSessionSequencerHelper::FindBindingForObject(LevelSequence, MeshActor);
@@ -326,17 +327,32 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
 
     if (bSetAnimRange)
     {
+        //MovieScene->SetPlaybackRangeLocked(false);
+
+        //// compute playback range in tick resolution
+        //const FFrameRate TickRes = MovieScene->GetTickResolution();
+        //const FFrameNumber StartTick(0);
+        //FFrameNumber EndTick = TickRes.AsFrameNumber(Animation->GetPlayLength());
+        //EndTick = FMath::Max(StartTick + 1, EndTick - 1);
+
+        //// [start, end) is required
+        //MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
+        //Section->SetRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
+
         MovieScene->SetPlaybackRangeLocked(false);
 
-        // compute playback range in tick resolution
         const FFrameRate TickRes = MovieScene->GetTickResolution();
         const FFrameNumber StartTick(0);
         FFrameNumber EndTick = TickRes.AsFrameNumber(Animation->GetPlayLength());
         EndTick = FMath::Max(StartTick + 1, EndTick - 1);
 
-        // [start, end) is required
-        MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
-        Section->SetRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
+        // no -1 adjustment, and use inclusive range
+        MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Inclusive(StartTick, EndTick));
+        Section->SetRange(TRange<FFrameNumber>::Inclusive(StartTick, EndTick));
+        Section->SetStartFrame(StartTick);
+
+        MovieScene->SetWorkingRange(-0.4f, Animation->GetPlayLength()+0.4f);
+        MovieScene->SetViewRange(-0.4f, Animation->GetPlayLength()+0.4f);
     }
 
     AnimTrack->Modify();
