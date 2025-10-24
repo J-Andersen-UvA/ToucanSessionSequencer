@@ -327,18 +327,6 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
 
     if (bSetAnimRange)
     {
-        //MovieScene->SetPlaybackRangeLocked(false);
-
-        //// compute playback range in tick resolution
-        //const FFrameRate TickRes = MovieScene->GetTickResolution();
-        //const FFrameNumber StartTick(0);
-        //FFrameNumber EndTick = TickRes.AsFrameNumber(Animation->GetPlayLength());
-        //EndTick = FMath::Max(StartTick + 1, EndTick - 1);
-
-        //// [start, end) is required
-        //MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
-        //Section->SetRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
-
         MovieScene->SetPlaybackRangeLocked(false);
 
         const FFrameRate TickRes = MovieScene->GetTickResolution();
