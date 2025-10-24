@@ -45,11 +45,22 @@ void SEditingSessionWindow::Construct(const FArguments&)
             + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
             [
                 SNew(STextBlock)
-                .Text_Lambda([this]() {
+                    .Text_Lambda([this]() {
                     FString MeshName = SelectedMesh.IsValid() ? SelectedMesh->GetName() : TEXT("None");
-                    FString RigName  = SelectedRig.IsValid()  ? SelectedRig->GetName()  : TEXT("None");
+                    FString RigName = TEXT("None");
+                    if (!SelectedRig.IsNull())
+                    {
+                        RigName = SelectedRig.IsValid()
+                            ? SelectedRig->GetName()
+                            : SelectedRig.ToSoftObjectPath().GetAssetName();
+                    }
+
                     return FText::FromString(FString::Printf(TEXT("Mesh: %s   |   Rig: %s"), *MeshName, *RigName));
-                })
+                        })
+                    .ColorAndOpacity_Lambda([this]() {
+                    bool bHasNone = !SelectedMesh.IsValid() || SelectedRig.IsNull();
+                    return bHasNone ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                        })
             ]
 
             // --- Load next animation ---
@@ -104,8 +115,9 @@ void SEditingSessionWindow::SaveSettings() const
     if (SelectedMesh.IsValid())
         GConfig->SetString(CfgSection, MeshKey, *SelectedMesh.ToSoftObjectPath().ToString(), Ini);
 
-    if (SelectedRig.IsValid())
-        GConfig->SetString(CfgSection, RigKey, *SelectedRig.ToSoftObjectPath().ToString(), Ini);
+    const FSoftObjectPath RigPath = SelectedRig.ToSoftObjectPath();
+    if (RigPath.IsValid())
+        GConfig->SetString(CfgSection, RigKey, *RigPath.ToString(), Ini);
 
     GConfig->Flush(false, Ini);
 }
@@ -223,8 +235,10 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         return FReply::Handled();
     }
 
+    UObject* RigObj = SelectedRig.LoadSynchronous(); // or TryLoad()
+
     // Delegate to helper
-    FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, SelectedRig, Anim);
+    FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
 
     return FReply::Handled();
 }
