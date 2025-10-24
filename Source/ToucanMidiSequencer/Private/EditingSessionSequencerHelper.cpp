@@ -11,7 +11,32 @@
 #include "ControlRigSequencerEditorLibrary.h"
 #include "AssetToolsModule.h"
 #include "IAssetTools.h"
+#include "MovieScenePossessable.h"
+#include "GameFramework/Actor.h"
 #include "Editor.h"
+#include "ILevelSequenceEditorToolkit.h"
+#include "ISequencer.h"
+#include "SequencerSettings.h"
+
+void setLooping(ULevelSequence* LevelSequence)
+{
+    if (UAssetEditorSubsystem* EditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+    {
+        if (IAssetEditorInstance* Inst = EditorSubsystem->FindEditorForAsset(LevelSequence, /*bFocusIfOpen*/false))
+        {
+            if (ILevelSequenceEditorToolkit* Toolkit = static_cast<ILevelSequenceEditorToolkit*>(Inst))
+            {
+                if (TSharedPtr<ISequencer> Seq = Toolkit->GetSequencer())
+                {
+                    if (USequencerSettings* Settings = Seq->GetSequencerSettings())
+                    {
+                        Settings->SetLoopMode(ESequencerLoopMode(2));
+                    }
+                }
+            }
+        }
+    }
+}
 
 void FEditingSessionSequencerHelper::LoadNextAnimation(
     TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
@@ -40,6 +65,7 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
     if (UAssetEditorSubsystem* EditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
     {
         EditorSubsystem->OpenEditorForAsset(LevelSequence);
+        setLooping(LevelSequence);
     }
 
     // Get current editor world
@@ -63,7 +89,7 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         MovieScene->SetDisplayRate(Animation->GetSamplingFrameRate());
 
         // Try to find an existing binding for this actor
-        FGuid BindingID = LevelSequence->FindBindingFromObject(MeshActor, World);
+        FGuid BindingID = FEditingSessionSequencerHelper::FindBindingForObject(LevelSequence, MeshActor);
         if (BindingID.IsValid())
         {
             UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing existing possessable binding for %s"), *MeshActor->GetName());
@@ -71,7 +97,7 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         else
         {
             // Fallback: check by label (rare cases)
-            for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+            for (const FMovieSceneBinding& Binding : static_cast<const UMovieScene*>(MovieScene)->GetBindings())
             {
                 const FMovieScenePossessable* Possessable = MovieScene->FindPossessable(Binding.GetObjectGuid());
                 if (Possessable && Possessable->GetName() == MeshActor->GetActorLabel())
@@ -283,7 +309,7 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
     for (UMovieSceneTrack* Track : TracksToRemove)
     {
         MovieScene->RemoveTrack(*Track);
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Removed old animation track for binding '%s'."), *Binding->GetName());
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Removed old animation track."));
     }
 
     UMovieSceneSkeletalAnimationTrack* AnimTrack = Cast<UMovieSceneSkeletalAnimationTrack>(
@@ -305,11 +331,11 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
         // compute playback range in tick resolution
         const FFrameRate TickRes = MovieScene->GetTickResolution();
         const FFrameNumber StartTick(0);
-        const FFrameNumber EndTick = TickRes.AsFrameNumber(Animation->GetPlayLength());
+        FFrameNumber EndTick = TickRes.AsFrameNumber(Animation->GetPlayLength());
+        EndTick = FMath::Max(StartTick + 1, EndTick - 1);
 
         // [start, end) is required
         MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
-
         Section->SetRange(TRange<FFrameNumber>::Exclusive(StartTick, EndTick));
     }
 
@@ -358,7 +384,7 @@ void FEditingSessionSequencerHelper::AddRigToSequence(
     FGuid BindingID;
     if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
-        for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+        for (const FMovieSceneBinding& Binding : static_cast<const UMovieScene*>(MovieScene)->GetBindings())
         {
             const FMovieScenePossessable* Possessable = MovieScene->FindPossessable(Binding.GetObjectGuid());
             if (Possessable && Possessable->GetPossessedObjectClass() == ASkeletalMeshActor::StaticClass())
@@ -371,21 +397,6 @@ void FEditingSessionSequencerHelper::AddRigToSequence(
     if (!BindingID.IsValid())
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No SkeletalMeshActor binding found in sequence."));
-        return;
-    }
-
-    // --- Resolve the actual bound actor instance (the one Sequencer uses) ---
-    ASkeletalMeshActor* MeshActor = nullptr;
-    {
-        TArray<UObject*, TInlineAllocator<1>> BoundObjs;
-        UE::UniversalObjectLocator::FResolveParams ResolveParams(World);
-        LevelSequence->LocateBoundObjects(BindingID, ResolveParams, BoundObjs);
-        if (BoundObjs.Num() > 0)
-            MeshActor = Cast<ASkeletalMeshActor>(BoundObjs[0]);
-    }
-    if (!MeshActor)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Could not locate bound SkeletalMeshActor instance."));
         return;
     }
 
@@ -405,3 +416,42 @@ void FEditingSessionSequencerHelper::AddRigToSequence(
     }
 }
 
+FGuid FEditingSessionSequencerHelper::FindBindingForObject(
+    const ULevelSequence* LevelSequence,
+    UObject* InObject,
+    TSharedPtr<const UE::MovieScene::FSharedPlaybackState> Shared)
+{
+    if (!LevelSequence || !InObject) return FGuid();
+
+    if (Shared.IsValid())
+    {
+        return LevelSequence->FindBindingFromObject(InObject, Shared.ToSharedRef());
+    }
+
+    const UMovieScene* MovieScene = LevelSequence->GetMovieScene();
+    if (!MovieScene) return FGuid();
+
+    const UClass* ObjClass = InObject->GetClass();
+    const FString ObjLabel = InObject->IsA<AActor>()
+        ? static_cast<AActor*>(InObject)->GetActorLabel()
+        : InObject->GetName();
+
+    // Use const GetBindings() to avoid C4996
+    for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+    {
+        // FindPossessable is non-const in this version, so cast safely
+        UMovieScene* NonConstMovieScene = const_cast<UMovieScene*>(MovieScene);
+        FMovieScenePossessable* Poss = NonConstMovieScene->FindPossessable(Binding.GetObjectGuid());
+        if (!Poss) continue;
+
+        const bool ClassMatch = Poss->GetPossessedObjectClass() == ObjClass;
+        const bool NameMatch = Poss->GetName() == ObjLabel;
+
+        if (ClassMatch && NameMatch)
+        {
+            return Binding.GetObjectGuid();
+        }
+    }
+
+    return FGuid();
+}

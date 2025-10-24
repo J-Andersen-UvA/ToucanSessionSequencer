@@ -3,6 +3,9 @@
 #include "CoreMinimal.h"
 #include "Engine/SkeletalMesh.h"
 #include "Animation/AnimSequence.h"
+#include "LevelSequence.h"
+#include "MovieScene.h"
+#include "MovieSceneBinding.h"
 
 class ULevelSequence;
 class ASkeletalMeshActor;
@@ -17,6 +20,10 @@ public:
     static void LoadNextAnimation(TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
                                   TSoftObjectPtr<UObject> Rig,
                                   UAnimSequence* Animation);
+    static FGuid FindBindingForObject(
+        const ULevelSequence* LevelSequence,
+        UObject* InObject,
+        TSharedPtr<const UE::MovieScene::FSharedPlaybackState> Shared = nullptr);
 
 private:
     // --- Internal helpers ---

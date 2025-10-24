@@ -14,6 +14,8 @@ public class ToucanMidiSequencer : ModuleRules
             "MovieSceneTracks",
             "ControlRig",
             "ControlRigEditor",
+            "Sequencer",
+            "LevelSequenceEditor",
         });
 
         PrivateDependencyModuleNames.AddRange(new[] {
@@ -30,7 +32,6 @@ public class ToucanMidiSequencer : ModuleRules
             "AnimGraphRuntime",
             "EditorScriptingUtilities",
             "MovieSceneTools",
-            "Sequencer",
         });
     }
 }
