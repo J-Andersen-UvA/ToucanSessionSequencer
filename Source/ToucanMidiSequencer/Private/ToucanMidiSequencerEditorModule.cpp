@@ -18,18 +18,25 @@
 #include "Animation/AnimSequence.h"
 #include "Editor.h"
 #include "SeqQueue.h"
+#include "SEditingSessionWindow.h"
 #include "SQueueWindow.h"
 
-static const FName ToucanSeqTabName(TEXT("ToucanSequenceController"));
+static const FName ToucanQueueTabName(TEXT("ToucanQueueControls"));
+static const FName ToucanEditingTabName(TEXT("ToucanEditingSession"));
 
 class FToucanSequencerEditorModule : public IModuleInterface
 {
 public:
     virtual void StartupModule() override
     {
-        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ToucanSeqTabName,
-            FOnSpawnTab::CreateRaw(this, &FToucanSequencerEditorModule::SpawnTab))
+        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ToucanQueueTabName,
+            FOnSpawnTab::CreateRaw(this, &FToucanSequencerEditorModule::SpawnQueueControlTab))
             .SetDisplayName(FText::FromString(TEXT("Queue Controls")))
+            .SetMenuType(ETabSpawnerMenuType::Hidden);
+
+        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ToucanEditingTabName,
+            FOnSpawnTab::CreateRaw(this, &FToucanSequencerEditorModule::SpawnEditingSessionTab))
+            .SetDisplayName(FText::FromString(TEXT("Editing Session")))
             .SetMenuType(ETabSpawnerMenuType::Hidden);
 
         // Add to main menu (e.g. Window → Developer Tools)
@@ -41,7 +48,8 @@ public:
     {
         UToolMenus::UnRegisterStartupCallback(this);
         UToolMenus::UnregisterOwner(this);
-        FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ToucanSeqTabName);
+        FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ToucanQueueTabName);
+        FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ToucanEditingTabName);
     }
 
 private:
@@ -61,15 +69,25 @@ private:
             FText::FromString("Toucan tools and utilities"),
             FNewToolMenuDelegate::CreateLambda([](UToolMenu* ToucanMenu)
                 {
-                    // Inside this submenu: add your entries
                     FToolMenuSection& Sec = ToucanMenu->AddSection("ToucanSeq", FText::FromString("Sequence Tools"));
+
                     Sec.AddMenuEntry(
                         "QueueControls",
                         FText::FromString("Queue Controls"),
                         FText::FromString("Open the Sequence Controller tab."),
                         FSlateIcon(),
                         FUIAction(FExecuteAction::CreateLambda([] {
-                            FGlobalTabmanager::Get()->TryInvokeTab(ToucanSeqTabName);
+                            FGlobalTabmanager::Get()->TryInvokeTab(ToucanQueueTabName);
+                            }))
+                    );
+
+                    Sec.AddMenuEntry(
+                        "EditingSession",
+                        FText::FromString("Editing Session"),
+                        FText::FromString("Open the Editing Session tab."),
+                        FSlateIcon(),
+                        FUIAction(FExecuteAction::CreateLambda([] {
+                            FGlobalTabmanager::Get()->TryInvokeTab(ToucanEditingTabName);
                             }))
                     );
                 }),
@@ -78,7 +96,7 @@ private:
         );
     }
 
-    TSharedRef<SDockTab> SpawnTab(const FSpawnTabArgs&)
+    TSharedRef<SDockTab> SpawnQueueControlTab(const FSpawnTabArgs&)
     {
         return SNew(SDockTab).TabRole(ETabRole::NomadTab)
         [
@@ -127,6 +145,13 @@ private:
                     })
                 ]
             ]
+        ];
+    }
+    TSharedRef<SDockTab> SpawnEditingSessionTab(const FSpawnTabArgs&)
+    {
+        return SNew(SDockTab).TabRole(ETabRole::NomadTab)
+        [
+            SNew(SEditingSessionWindow)
         ];
     }
 
