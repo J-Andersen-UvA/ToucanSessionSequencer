@@ -22,7 +22,7 @@ private:
     // --- Internal helpers ---
     static ULevelSequence* CreateOrLoadLevelSequence();
     static ASkeletalMeshActor* SpawnOrFindSkeletalMeshActor(UWorld* World, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
-    static void AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID);
+    static void AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange = true);
     static void AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig);
     static ULevelSequence* CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName);
 
