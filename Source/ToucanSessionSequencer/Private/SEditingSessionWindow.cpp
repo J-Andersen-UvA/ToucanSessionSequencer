@@ -25,7 +25,7 @@ void SEditingSessionWindow::Construct(const FArguments&)
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSelectionRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildStatusRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(3.0f)]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildLoadButton()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSessionControlsRow()]
                         + SVerticalBox::Slot().FillHeight(1.f)[BuildQueueList()]
                 ]
         ];
@@ -110,11 +110,25 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
         ];
 }
 
-TSharedRef<SWidget> SEditingSessionWindow::BuildLoadButton()
+TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
 {
-    return SNew(SButton)
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Session Controls:")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+            .Text(FText::FromString(TEXT("Bake & Save Animation")))
+            .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+        SNew(SButton)
         .Text(FText::FromString(TEXT("Load Next Animation")))
-        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation);
+        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+        ];
 }
 
 TSharedRef<SWidget> SEditingSessionWindow::BuildQueueList()
@@ -274,6 +288,11 @@ FReply SEditingSessionWindow::OnSelectOutputFolder()
         ];
 
     FSlateApplication::Get().AddWindow(PickerWindow);
+    return FReply::Handled();
+}
+
+FReply SEditingSessionWindow::OnBakeSaveAnimation()
+{
     return FReply::Handled();
 }
 

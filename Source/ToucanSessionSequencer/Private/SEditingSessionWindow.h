@@ -20,7 +20,7 @@ public:
 private:
     TSharedRef<SWidget> BuildSelectionRow();
     TSharedRef<SWidget> BuildStatusRow();
-    TSharedRef<SWidget> BuildLoadButton();
+    TSharedRef<SWidget> BuildSessionControlsRow();
     TSharedRef<SWidget> BuildQueueList();
 
 private:
@@ -31,6 +31,7 @@ private:
     FReply OnSelectSkeletalMesh();
     FReply OnSelectRig();
     FReply OnSelectOutputFolder();
+    FReply OnBakeSaveAnimation();
     FReply OnLoadNextAnimation();
 
 private:
