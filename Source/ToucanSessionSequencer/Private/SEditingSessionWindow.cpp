@@ -19,6 +19,7 @@
 void SEditingSessionWindow::Construct(const FArguments&)
 {
     RefreshQueue();
+    FSeqQueue::Get().OnQueueChanged().AddSP(this, &SEditingSessionWindow::RefreshQueue);
 
     ChildSlot
         [

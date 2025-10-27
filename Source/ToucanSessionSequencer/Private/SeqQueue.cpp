@@ -62,6 +62,7 @@ void FSeqQueue::Add(const FAssetData& A)
     {
         Items.Add(MoveTemp(Q));
         Save();
+        QueueChanged.Broadcast();
     }
 }
 
@@ -73,6 +74,7 @@ void FSeqQueue::AddPath(const FSoftObjectPath& P, const FText& Nice)
     {
         Items.Add(MoveTemp(Q));
         Save();
+        QueueChanged.Broadcast();
     }
 }
 
@@ -81,5 +83,6 @@ bool FSeqQueue::RemoveAt(int32 Index)
     if (!Items.IsValidIndex(Index)) return false;
     Items.RemoveAt(Index);
     Save();
+    QueueChanged.Broadcast();
     return true;
 }
