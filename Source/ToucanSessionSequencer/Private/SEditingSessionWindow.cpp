@@ -28,7 +28,8 @@ void SEditingSessionWindow::Construct(const FArguments&)
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSelectionRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildStatusRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueControlsRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueAdditionControlsRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueRemovalControlsRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSessionControlsRow()]
                         + SVerticalBox::Slot().FillHeight(1.f)[BuildQueueList()]
@@ -115,12 +116,12 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
         ];
 }
 
-TSharedRef<SWidget> SEditingSessionWindow::BuildQueueControlsRow()
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueAdditionControlsRow()
 {
     return SNew(SHorizontalBox)
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
         [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Queue animations from ")))
+            SNew(STextBlock).Text(FText::FromString(TEXT("Queue animations from: ")))
         ]
         + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
         [
@@ -133,6 +134,27 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildQueueControlsRow()
             SNew(SButton)
                 .Text(FText::FromString(TEXT("anim sequence(s)")))
                 .OnClicked_Lambda([]{ FQueueControls::AddAnimationsByHand(); return FReply::Handled(); })
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueRemovalControlsRow()
+{
+    return SNew(SHorizontalBox)
+    +SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Remove queued animations: ")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("all animations")))
+                .OnClicked_Lambda([] { FQueueControls::RemoveAllAnimations(); return FReply::Handled(); })
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("marked processed")))
+                .OnClicked_Lambda([] { FQueueControls::RemoveMarkedProcessedAnimations(); return FReply::Handled(); })
         ];
 }
 

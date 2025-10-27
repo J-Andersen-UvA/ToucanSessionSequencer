@@ -30,7 +30,7 @@ public:
     void Load();
     void Save() const;
 
-    void Clear()                  { Items.Reset(); }
+    void Clear() { Items.Reset(); Save(); }
     void Add(const FAssetData& A);
     void AddPath(const FSoftObjectPath& P, const FText& Nice);
     bool RemoveAt(int32 Index);

@@ -9,6 +9,8 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Input/SButton.h"
 #include "SeqQueue.h"
+#include "EditorAssetLibrary.h"
+#include "Editor.h"
 
 void FQueueControls::AddAnimationsFromFolder()
 {
@@ -89,4 +91,42 @@ void FQueueControls::AddAnimationsByHand()
         }),
         FOnAssetDialogCancelled::CreateLambda([] {})
     );
+}
+
+void FQueueControls::RemoveAllAnimations()
+{
+    auto& Queue = FSeqQueue::Get();
+    const auto& All = Queue.GetAll();
+
+    if (All.Num() == 0)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Queue already empty."));
+        return;
+    }
+
+    // Remove all entries
+    Queue.Clear();
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Removed all %d animations from queue."), All.Num());
+}
+
+void FQueueControls::RemoveMarkedProcessedAnimations()
+{
+    auto& Queue = FSeqQueue::Get();
+    auto All = Queue.GetAll(); // copy to iterate safely
+    int32 RemovedCount = 0;
+
+    for (int32 i = All.Num() - 1; i >= 0; --i)
+    {
+        UObject* AnimObject = All[i].Path.TryLoad();
+        if (!AnimObject)
+            continue;
+
+        if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
+        {
+            Queue.RemoveAt(i);
+            ++RemovedCount;
+        }
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Removed %d processed animations from queue."), RemovedCount);
 }
