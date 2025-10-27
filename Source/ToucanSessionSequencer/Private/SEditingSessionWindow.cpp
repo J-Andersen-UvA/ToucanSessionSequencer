@@ -240,24 +240,114 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
     TSharedPtr<FQueuedAnim> Item, const TSharedRef<STableViewBase>& Owner)
 {
     return SNew(STableRow<TSharedPtr<FQueuedAnim>>, Owner)
-    [
-        SNew(STextBlock)
-            .Text_Lambda([this, Item]() {
-            int32 RowIndex = Rows.IndexOfByKey(Item);
-            FString Label = Item->DisplayName.ToString();
-            if (RowIndex == CurrentIndex)
-            {
-                Label += TEXT("  <-- editing");
-            }
-            return FText::FromString(Label);
-                })
-            .ColorAndOpacity_Lambda([this, Item]() {
-            int32 RowIndex = Rows.IndexOfByKey(Item);
-            return (RowIndex == CurrentIndex)
-                ? FLinearColor(0.2f, 0.4f, 1.0f)
-                : FLinearColor::White;
-                })
-    ];
+        [
+            SNew(SHorizontalBox)
+
+                // --- Main text ---
+                + SHorizontalBox::Slot()
+                .FillWidth(1.f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(STextBlock)
+                        .Text_Lambda([this, Item]() {
+                        if (!Item.IsValid())
+                            return FText::GetEmpty();
+
+                        int32 RowIndex = Rows.IndexOfByKey(Item);
+                        FString Label = Item->DisplayName.ToString();
+
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                        if (Asset)
+                        {
+                            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
+                            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
+                                Label += TEXT(" (Already processed?)");
+                        }
+
+                        if (RowIndex == CurrentIndex)
+                            Label += TEXT("  <-- editing");
+
+                        return FText::FromString(Label);
+                            })
+                        .ColorAndOpacity_Lambda([this, Item]() {
+                        if (!Item.IsValid())
+                            return FLinearColor::White;
+
+                        int32 RowIndex = Rows.IndexOfByKey(Item);
+                        if (RowIndex == CurrentIndex)
+                            return FLinearColor(0.2f, 0.4f, 1.0f); // blue highlight
+
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                        if (Asset)
+                        {
+                            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
+                            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
+                                return FLinearColor::Red;
+                        }
+
+                        return FLinearColor::White;
+                            })
+                ]
+
+            // --- "Unmark processed" button, only visible if processed ---
+            + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Unmark processed")))
+                        .Visibility_Lambda([Item]() {
+                        if (!Item.IsValid())
+                            return EVisibility::Collapsed;
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                        if (!Asset)
+                            return EVisibility::Collapsed;
+                        return UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True")
+                            ? EVisibility::Visible
+                            : EVisibility::Collapsed;
+                            })
+                        .OnClicked_Lambda([this, Item]() {
+                        if (Item.IsValid())
+                        {
+                            UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                            if (Asset)
+                            {
+                                UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("False"));
+                                UEditorAssetLibrary::SaveLoadedAsset(Asset);
+                                RefreshQueue();
+                            }
+                        }
+                        return FReply::Handled();
+                            })
+                ]
+
+            // --- "Remove" button ---
+            + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Remove")))
+                        .OnClicked_Lambda([Item]() {
+                        const auto& All = FSeqQueue::Get().GetAll();
+                        if (!Item.IsValid())
+                            return FReply::Handled();
+
+                        int32 Index = INDEX_NONE;
+                        for (int32 i = 0; i < All.Num(); ++i)
+                        {
+                            if (All[i].Path == Item->Path)
+                            {
+                                Index = i;
+                                break;
+                            }
+                        }
+
+                        if (Index != INDEX_NONE)
+                            FSeqQueue::Get().RemoveAt(Index);
+
+                        return FReply::Handled();
+                            })
+                ]
+        ];
 }
 
 FReply SEditingSessionWindow::OnSelectSkeletalMesh()
