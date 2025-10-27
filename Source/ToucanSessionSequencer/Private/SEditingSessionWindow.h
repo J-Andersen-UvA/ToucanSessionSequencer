@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
 #include "SeqQueue.h"
+#include "OutputHelper.h"
 
 /**
  * Editing Session main window.
@@ -17,12 +18,19 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
+    TSharedRef<SWidget> BuildSelectionRow();
+    TSharedRef<SWidget> BuildStatusRow();
+    TSharedRef<SWidget> BuildLoadButton();
+    TSharedRef<SWidget> BuildQueueList();
+
+private:
     // --- internal helpers ---
     void RefreshQueue();
     TSharedRef<ITableRow> OnMakeRow(TSharedPtr<FQueuedAnim> Item, const TSharedRef<STableViewBase>& Owner);
 
     FReply OnSelectSkeletalMesh();
     FReply OnSelectRig();
+    FReply OnSelectOutputFolder();
     FReply OnLoadNextAnimation();
 
 private:

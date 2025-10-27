@@ -18,71 +18,111 @@ void SEditingSessionWindow::Construct(const FArguments&)
     RefreshQueue();
 
     ChildSlot
-    [
-        SNew(SBorder).Padding(8)
         [
-            SNew(SVerticalBox)
-
-            // --- Skeletal mesh & rig selection ---
-            + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
-            [
-                SNew(SHorizontalBox)
-                + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+            SNew(SBorder).Padding(8)
                 [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Select Skeletal Mesh")))
-                    .OnClicked(this, &SEditingSessionWindow::OnSelectSkeletalMesh)
+                    SNew(SVerticalBox)
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSelectionRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildStatusRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(3.0f)]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildLoadButton()]
+                        + SVerticalBox::Slot().FillHeight(1.f)[BuildQueueList()]
                 ]
-                + SHorizontalBox::Slot().AutoWidth()
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Select Rig")))
-                    .OnClicked(this, &SEditingSessionWindow::OnSelectRig)
-                ]
-            ]
-
-            // --- current selections display ---
-            + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
-            [
-                SNew(STextBlock)
-                    .Text_Lambda([this]() {
-                    FString MeshName = SelectedMesh.IsValid() ? SelectedMesh->GetName() : TEXT("None");
-                    FString RigName = TEXT("None");
-                    if (!SelectedRig.IsNull())
-                    {
-                        RigName = SelectedRig.IsValid()
-                            ? SelectedRig->GetName()
-                            : SelectedRig.ToSoftObjectPath().GetAssetName();
-                    }
-
-                    return FText::FromString(FString::Printf(TEXT("Mesh: %s   |   Rig: %s"), *MeshName, *RigName));
-                        })
-                    .ColorAndOpacity_Lambda([this]() {
-                    bool bHasNone = !SelectedMesh.IsValid() || SelectedRig.IsNull();
-                    return bHasNone ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
-                        })
-            ]
-
-            // --- Load next animation ---
-            + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
-            [
-                SNew(SButton)
-                .Text(FText::FromString(TEXT("Load Next Animation")))
-                .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
-            ]
-
-            // --- Queue list ---
-            + SVerticalBox::Slot().FillHeight(1.f)
-            [
-                SAssignNew(ListView, SListView<TSharedPtr<FQueuedAnim>>)
-                .ListItemsSource(&Rows)
-                .OnGenerateRow(this, &SEditingSessionWindow::OnMakeRow)
-                .SelectionMode(ESelectionMode::None)
-            ]
-        ]
-    ];
+        ];
 
     LoadSettings();
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionRow()
+{
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Pick:")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("Skeletal Mesh")))
+                .OnClicked(this, &SEditingSessionWindow::OnSelectSkeletalMesh)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("Control Rig")))
+                .OnClicked(this, &SEditingSessionWindow::OnSelectRig)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("Output Folder")))
+                .OnClicked(this, &SEditingSessionWindow::OnSelectOutputFolder)
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
+{
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Mesh:")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 16, 0)
+        [
+            SNew(STextBlock)
+                .Text_Lambda([this]() {
+                return FText::FromString(SelectedMesh.IsValid() ? SelectedMesh->GetName() : TEXT("None"));
+                    })
+                .ColorAndOpacity_Lambda([this]() {
+                return SelectedMesh.IsValid() ? FSlateColor::UseForeground() : FSlateColor(FLinearColor::Red);
+                    })
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Rig:")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 16, 0)
+        [
+            SNew(STextBlock)
+                .Text_Lambda([this]() {
+                if (SelectedRig.IsNull())
+                    return FText::FromString(TEXT("None"));
+                return FText::FromString(
+                    SelectedRig.IsValid()
+                    ? SelectedRig->GetName()
+                    : SelectedRig.ToSoftObjectPath().GetAssetName());
+                    })
+                .ColorAndOpacity_Lambda([this]() {
+                return SelectedRig.IsNull() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                    })
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Output Folder:")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+                .Text_Lambda([this]() { return FText::FromString(FOutputHelper::Get()); })
+                .ColorAndOpacity_Lambda([this]() {
+                return FOutputHelper::Get().IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                    })
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildLoadButton()
+{
+    return SNew(SButton)
+        .Text(FText::FromString(TEXT("Load Next Animation")))
+        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation);
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueList()
+{
+    return SAssignNew(ListView, SListView<TSharedPtr<FQueuedAnim>>)
+        .ListItemsSource(&Rows)
+        .OnGenerateRow(this, &SEditingSessionWindow::OnMakeRow)
+        .SelectionMode(ESelectionMode::None);
 }
 
 void SEditingSessionWindow::LoadSettings()
@@ -93,7 +133,7 @@ void SEditingSessionWindow::LoadSettings()
     const FString& Ini = GGameIni;
 #endif
 
-    FString MeshPath, RigPath;
+    FString MeshPath, RigPath, FolderPath;
     GConfig->GetString(CfgSection, MeshKey, MeshPath, Ini);
     GConfig->GetString(CfgSection, RigKey, RigPath, Ini);
 
@@ -208,6 +248,32 @@ FReply SEditingSessionWindow::OnSelectRig()
         FOnAssetDialogCancelled::CreateLambda([] {})
     );
 
+    return FReply::Handled();
+}
+
+FReply SEditingSessionWindow::OnSelectOutputFolder()
+{
+    FContentBrowserModule& CB = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+    IContentBrowserSingleton& CBSingleton = CB.Get();
+
+    FPathPickerConfig PathPickerConfig;
+    PathPickerConfig.DefaultPath = FOutputHelper::Get();
+    PathPickerConfig.bAllowContextMenu = true;
+    PathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([](const FString& SelectedPath)
+        {
+            FOutputHelper::Set(SelectedPath);
+        });
+
+    TSharedRef<SWindow> PickerWindow = SNew(SWindow)
+        .Title(FText::FromString(TEXT("Select Output Folder")))
+        .ClientSize(FVector2D(400, 300))
+        .SupportsMinimize(false)
+        .SupportsMaximize(false)
+        [
+            CBSingleton.CreatePathPicker(PathPickerConfig)
+        ];
+
+    FSlateApplication::Get().AddWindow(PickerWindow);
     return FReply::Handled();
 }
 
