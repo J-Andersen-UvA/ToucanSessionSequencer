@@ -36,6 +36,8 @@ private:
     FReply OnBakeSaveAnimation();
     FReply OnLoadNextAnimation();
 
+    void LoadAnimationAtIndex(int32 TargetIndex);
+
 private:
     TArray<TSharedPtr<FQueuedAnim>> Rows;
     TSharedPtr<SListView<TSharedPtr<FQueuedAnim>>> ListView;
