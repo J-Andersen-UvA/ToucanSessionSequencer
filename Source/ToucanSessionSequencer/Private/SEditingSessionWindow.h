@@ -17,12 +17,19 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
+    TSharedRef<SWidget> BuildSelectionRow();
+    TSharedRef<SWidget> BuildStatusRow();
+    TSharedRef<SWidget> BuildLoadButton();
+    TSharedRef<SWidget> BuildQueueList();
+
+private:
     // --- internal helpers ---
     void RefreshQueue();
     TSharedRef<ITableRow> OnMakeRow(TSharedPtr<FQueuedAnim> Item, const TSharedRef<STableViewBase>& Owner);
 
     FReply OnSelectSkeletalMesh();
     FReply OnSelectRig();
+    FReply OnSelectOutputFolder();
     FReply OnLoadNextAnimation();
 
 private:
@@ -38,6 +45,8 @@ private:
     static constexpr const TCHAR* CfgSection = TEXT("ToucanEditingSession");
     static constexpr const TCHAR* MeshKey = TEXT("LastSelectedMesh");
     static constexpr const TCHAR* RigKey = TEXT("LastSelectedRig");
+    static constexpr const TCHAR* OutputFolderKey = TEXT("LastSelectedOutputFolder");
+    FString OutputFolder = TEXT("/Game/ToucanTemp/Output");
 
     void LoadSettings();
     void SaveSettings() const;
