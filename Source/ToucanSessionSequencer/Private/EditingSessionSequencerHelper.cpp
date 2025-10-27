@@ -17,6 +17,20 @@
 #include "ILevelSequenceEditorToolkit.h"
 #include "ISequencer.h"
 #include "SequencerSettings.h"
+#include "SequencerTools.h"
+#include "Animation/AnimSequence.h"
+#include "Factories/AnimSequenceFactory.h"
+#include "EditorAssetLibrary.h"
+#include "MovieSceneToolHelpers.h"
+#include "MovieSceneSequence.h"
+#include "Exporters/AnimSeqExportOption.h"
+#include "OutputHelper.h"
+#include "LevelSequencePlayer.h"
+#include "LevelSequenceActor.h"
+#include "MovieSceneSequencePlayer.h"
+
+TWeakObjectPtr<ULevelSequence> FEditingSessionSequencerHelper::ActiveSequence;
+TWeakObjectPtr<USkeletalMeshComponent> FEditingSessionSequencerHelper::ActiveSkeletalMeshComponent;
 
 void setLooping(ULevelSequence* LevelSequence)
 {
@@ -84,6 +98,11 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         return;
     }
 
+    if (MeshActor && MeshActor->GetSkeletalMeshComponent())
+    {
+        SetActiveSkeletalMeshComponent(MeshActor->GetSkeletalMeshComponent());
+    }
+
     if (UMovieScene* MovieScene = LevelSequence->GetMovieScene())
     {
         MovieScene->SetDisplayRate(Animation->GetSamplingFrameRate());
@@ -142,6 +161,7 @@ ULevelSequence* FEditingSessionSequencerHelper::CreateOrLoadLevelSequence()
     ULevelSequence* Existing = LoadObject<ULevelSequence>(nullptr, *PackageName);
     if (Existing)
     {
+        SetActiveSequence(Existing);
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded existing sequence: %s"), *PackageName);
         return Existing;
     }
@@ -172,6 +192,7 @@ ULevelSequence* FEditingSessionSequencerHelper::CreateOrLoadLevelSequence()
     // Mark as dirty so it will be saved
     Package->MarkPackageDirty();
     NewSequence->MarkPackageDirty();
+    SetActiveSequence(NewSequence);
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created new Level Sequence: %s"), *PackageName);
     return NewSequence;
@@ -458,4 +479,103 @@ FGuid FEditingSessionSequencerHelper::FindBindingForObject(
     }
 
     return FGuid();
+}
+
+void FEditingSessionSequencerHelper::SetActiveSkeletalMeshComponent(USkeletalMeshComponent* InComp)
+{
+    ActiveSkeletalMeshComponent = InComp;
+}
+
+USkeletalMeshComponent* FEditingSessionSequencerHelper::GetActiveSkeletalMeshComponent()
+{
+    return ActiveSkeletalMeshComponent.Get();
+}
+
+void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath)
+{
+    // 1. Get current sequence
+#if WITH_EDITOR
+    ULevelSequence* Sequence = FEditingSessionSequencerHelper::GetActiveSequence();
+    if (!Sequence)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No active sequence found."));
+        return;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No editor world found."));
+        return;
+    }
+
+    USkeletalMeshComponent* SkelComp = GetActiveSkeletalMeshComponent();
+    if (!SkelComp)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No active SkeletalMeshComponent found in current sequence."));
+        return;
+    }
+
+    USkeleton* Skeleton = SkelComp->GetSkeletalMeshAsset()
+        ? SkelComp->GetSkeletalMeshAsset()->GetSkeleton()
+        : nullptr;
+
+    if (!Skeleton)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Skeletal mesh has no skeleton assigned."));
+        return;
+    }
+
+    FString Folder = FOutputHelper::EnsureDatedSubfolder();
+
+    // Create AnimSequence asset
+    FAssetToolsModule& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+    UAnimSequenceFactory* Factory = NewObject<UAnimSequenceFactory>();
+    Factory->TargetSkeleton = Skeleton;
+
+    UAnimSequence* NewAnim = Cast<UAnimSequence>(
+        AssetTools.Get().CreateAsset(*AnimName, *Folder, UAnimSequence::StaticClass(), Factory)
+    );
+    if (!NewAnim)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create AnimSequence asset."));
+        return;
+    }
+
+    // make a temporary player for evaluation
+    ALevelSequenceActor* TempActor = nullptr;
+    FMovieSceneSequencePlaybackSettings PlaySettings; // defaults ok
+    ULevelSequencePlayer* TempPlayer =
+        ULevelSequencePlayer::CreateLevelSequencePlayer(World, Sequence, PlaySettings, TempActor);
+
+    if (!TempPlayer || !TempActor)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create LevelSequencePlayer for baking."));
+        return;
+    }
+
+    UAnimSeqExportOption* ExportOptions = NewObject<UAnimSeqExportOption>(GetTransientPackage());
+    ExportOptions->bExportTransforms = true;
+    ExportOptions->bExportMorphTargets = true;
+    ExportOptions->bExportAttributeCurves = false;
+
+    FAnimExportSequenceParameters Params;
+    Params.MovieSceneSequence = Sequence;
+    Params.RootMovieSceneSequence = Sequence;
+    Params.bForceUseOfMovieScenePlaybackRange = true;
+    Params.Player = TempPlayer;
+
+    // Use MovieSceneToolHelpers to bake keys into the anim sequence
+    if (MovieSceneToolHelpers::ExportToAnimSequence(NewAnim, ExportOptions, Params, SkelComp))
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked and saved animation: %s"), *NewAnim->GetPathName());
+        FOutputHelper::MarkAssetAsProcessed(SourceAnimPath);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Bake failed for sequence: %s"), *Sequence->GetName());
+    }
+
+    if (TempActor) { TempActor->Destroy(); }
+#endif
 }

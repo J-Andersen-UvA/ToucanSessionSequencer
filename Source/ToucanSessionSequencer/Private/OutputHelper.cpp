@@ -64,3 +64,24 @@ FString FOutputHelper::EnsureDatedSubfolder()
 
     return NormalizedPath;
 }
+
+void FOutputHelper::MarkAssetAsProcessed(const FString& AssetPath)
+{
+    UObject* Asset = UEditorAssetLibrary::LoadAsset(AssetPath);
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Failed to load asset: %s"), *AssetPath);
+        return;
+    }
+
+    UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("True"));
+
+    if (UEditorAssetLibrary::SaveAsset(AssetPath))
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Marked %s as Processed=True"), *AssetPath);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to save tagged asset: %s"), *AssetPath);
+    }
+}

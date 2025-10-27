@@ -13,6 +13,8 @@ public:
     static FString GetDefaultFolder();
     static FString EnsureDatedSubfolder();
 
+    static void MarkAssetAsProcessed(const FString& AssetPath);
+
 private:
     static FString CurrentFolder;
     static constexpr const TCHAR* ConfigSection = TEXT("ToucanEditingSession");
