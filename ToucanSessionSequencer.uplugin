@@ -2,12 +2,12 @@
     "FileVersion": 3,
     "Version": 1,
     "VersionName": "1.0",
-    "FriendlyName": "ToucanMidiSequencer",
+    "FriendlyName": "ToucanSessionSequencer",
     "Description": "Queue and control animations for Sequencer from the editor.",
     "Category": "Animation",
     "Modules": [
         {
-            "Name": "ToucanMidiSequencer",
+            "Name": "ToucanSessionSequencer",
             "Type": "Editor",
             "LoadingPhase": "Default"
         }

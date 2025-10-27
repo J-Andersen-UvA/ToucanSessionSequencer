@@ -1,9 +1,9 @@
 ﻿using UnrealBuildTool;
 using UnrealBuildTool.Rules;
 
-public class ToucanMidiSequencer : ModuleRules
+public class ToucanSessionSequencer : ModuleRules
 {
-    public ToucanMidiSequencer(ReadOnlyTargetRules Target) : base(Target)
+    public ToucanSessionSequencer(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Slate", "SlateCore" });

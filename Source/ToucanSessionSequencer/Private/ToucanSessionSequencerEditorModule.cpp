@@ -264,4 +264,4 @@ private:
     }
 };
 
-IMPLEMENT_MODULE(FToucanSequencerEditorModule, ToucanMidiSequencer)
+IMPLEMENT_MODULE(FToucanSequencerEditorModule, ToucanSessionSequencer)
