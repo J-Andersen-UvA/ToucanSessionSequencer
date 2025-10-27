@@ -13,6 +13,8 @@
 #include "EditorAssetLibrary.h"
 #include "UObject/TopLevelAssetPath.h"
 #include "Misc/MessageDialog.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "QueueControls.h"
 
 void SEditingSessionWindow::Construct(const FArguments&)
 {
@@ -25,7 +27,9 @@ void SEditingSessionWindow::Construct(const FArguments&)
                     SNew(SVerticalBox)
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSelectionRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildStatusRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(3.0f)]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueControlsRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSessionControlsRow()]
                         + SVerticalBox::Slot().FillHeight(1.f)[BuildQueueList()]
                 ]
@@ -108,6 +112,27 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
                 .ColorAndOpacity_Lambda([this]() {
                 return FOutputHelper::Get().IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
                     })
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueControlsRow()
+{
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Queue animations from ")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("folder")))
+                .OnClicked_Lambda([]{ FQueueControls::AddAnimationsFromFolder(); return FReply::Handled(); })
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("anim sequence(s)")))
+                .OnClicked_Lambda([]{ FQueueControls::AddAnimationsByHand(); return FReply::Handled(); })
         ];
 }
 
