@@ -569,6 +569,7 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     if (MovieSceneToolHelpers::ExportToAnimSequence(NewAnim, ExportOptions, Params, SkelComp))
     {
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked and saved animation: %s"), *NewAnim->GetPathName());
+        FOutputHelper::MarkAssetAsProcessed(SourceAnimPath);
     }
     else
     {
