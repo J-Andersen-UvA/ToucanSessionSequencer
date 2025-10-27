@@ -12,6 +12,7 @@
 #include "Editor.h"
 #include "EditorAssetLibrary.h"
 #include "UObject/TopLevelAssetPath.h"
+#include "Misc/MessageDialog.h"
 
 void SEditingSessionWindow::Construct(const FArguments&)
 {
@@ -322,8 +323,29 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         ListView->RebuildList();
 
     // Load animation asset
-    const FQueuedAnim& SelectedAnim = All[CurrentIndex];
-    UAnimSequence* Anim = Cast<UAnimSequence>(SelectedAnim.Path.TryLoad());
+    UObject* AnimObject = All[CurrentIndex].Path.TryLoad();
+    if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
+    {
+        const FString AnimName = AnimObject->GetName();
+        const FString AnimPath = All[CurrentIndex].Path.ToString();
+
+        const FText Title = FText::FromString(TEXT("Processed Animation Detected"));
+        
+        const FText Message = FText::Format(
+            FText::FromString(TEXT("Animation:\t'{0}'\nPath:\t'{1}'\nNote:\tis marked as 'Processed'.\nAction:\tdo you want to load it anyway?")),
+            FText::FromString(AnimName),
+            FText::FromString(AnimPath)
+        );
+
+        EAppReturnType::Type Response = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
+        if (Response == EAppReturnType::No)
+        {
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Skipped processed animation: %s"), *AnimPath);
+            return FReply::Handled();
+        }
+    }
+
+    UAnimSequence* Anim = Cast<UAnimSequence>(AnimObject);
     if (!Anim)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation asset."));
