@@ -103,9 +103,9 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
         [
             SNew(STextBlock)
-                .Text_Lambda([this]() { return FText::FromString(OutputFolder); })
+                .Text_Lambda([this]() { return FText::FromString(FOutputHelper::Get()); })
                 .ColorAndOpacity_Lambda([this]() {
-                return OutputFolder.IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                return FOutputHelper::Get().IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
                     })
         ];
 }
@@ -136,16 +136,12 @@ void SEditingSessionWindow::LoadSettings()
     FString MeshPath, RigPath, FolderPath;
     GConfig->GetString(CfgSection, MeshKey, MeshPath, Ini);
     GConfig->GetString(CfgSection, RigKey, RigPath, Ini);
-    GConfig->GetString(CfgSection, OutputFolderKey, FolderPath, Ini);
 
     if (!MeshPath.IsEmpty())
         SelectedMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(MeshPath));
 
     if (!RigPath.IsEmpty())
         SelectedRig = TSoftObjectPtr<UObject>(FSoftObjectPath(RigPath));
-
-    if (!FolderPath.IsEmpty())
-        OutputFolder = FolderPath;
 }
 
 void SEditingSessionWindow::SaveSettings() const
@@ -162,8 +158,6 @@ void SEditingSessionWindow::SaveSettings() const
     const FSoftObjectPath RigPath = SelectedRig.ToSoftObjectPath();
     if (RigPath.IsValid())
         GConfig->SetString(CfgSection, RigKey, *RigPath.ToString(), Ini);
-
-    GConfig->SetString(CfgSection, OutputFolderKey, *OutputFolder, Ini);
 
     GConfig->Flush(false, Ini);
 }
@@ -263,12 +257,11 @@ FReply SEditingSessionWindow::OnSelectOutputFolder()
     IContentBrowserSingleton& CBSingleton = CB.Get();
 
     FPathPickerConfig PathPickerConfig;
-    PathPickerConfig.DefaultPath = OutputFolder;
+    PathPickerConfig.DefaultPath = FOutputHelper::Get();
     PathPickerConfig.bAllowContextMenu = true;
-    PathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([this](const FString& SelectedPath)
+    PathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([](const FString& SelectedPath)
         {
-            OutputFolder = SelectedPath;
-            SaveSettings();
+            FOutputHelper::Set(SelectedPath);
         });
 
     TSharedRef<SWindow> PickerWindow = SNew(SWindow)

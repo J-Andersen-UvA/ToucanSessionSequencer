@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Widgets/SCompoundWidget.h"
 #include "SeqQueue.h"
+#include "OutputHelper.h"
 
 /**
  * Editing Session main window.
@@ -45,8 +46,6 @@ private:
     static constexpr const TCHAR* CfgSection = TEXT("ToucanEditingSession");
     static constexpr const TCHAR* MeshKey = TEXT("LastSelectedMesh");
     static constexpr const TCHAR* RigKey = TEXT("LastSelectedRig");
-    static constexpr const TCHAR* OutputFolderKey = TEXT("LastSelectedOutputFolder");
-    FString OutputFolder = TEXT("/Game/ToucanTemp/Output");
 
     void LoadSettings();
     void SaveSettings() const;
