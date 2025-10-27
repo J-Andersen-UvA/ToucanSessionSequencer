@@ -19,9 +19,7 @@
 #include "Editor.h"
 #include "SeqQueue.h"
 #include "SEditingSessionWindow.h"
-#include "SQueueWindow.h"
 
-static const FName ToucanQueueTabName(TEXT("ToucanQueueControls"));
 static const FName ToucanEditingTabName(TEXT("ToucanEditingSession"));
 
 class FToucanSequencerEditorModule : public IModuleInterface
@@ -29,11 +27,6 @@ class FToucanSequencerEditorModule : public IModuleInterface
 public:
     virtual void StartupModule() override
     {
-        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ToucanQueueTabName,
-            FOnSpawnTab::CreateRaw(this, &FToucanSequencerEditorModule::SpawnQueueControlTab))
-            .SetDisplayName(FText::FromString(TEXT("Queue Controls")))
-            .SetMenuType(ETabSpawnerMenuType::Hidden);
-
         FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ToucanEditingTabName,
             FOnSpawnTab::CreateRaw(this, &FToucanSequencerEditorModule::SpawnEditingSessionTab))
             .SetDisplayName(FText::FromString(TEXT("Editing Session")))
@@ -48,7 +41,6 @@ public:
     {
         UToolMenus::UnRegisterStartupCallback(this);
         UToolMenus::UnregisterOwner(this);
-        FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ToucanQueueTabName);
         FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(ToucanEditingTabName);
     }
 
@@ -72,16 +64,6 @@ private:
                     FToolMenuSection& Sec = ToucanMenu->AddSection("ToucanSeq", FText::FromString("Sequence Tools"));
 
                     Sec.AddMenuEntry(
-                        "QueueControls",
-                        FText::FromString("Queue Controls"),
-                        FText::FromString("Open the Sequence Controller tab."),
-                        FSlateIcon(),
-                        FUIAction(FExecuteAction::CreateLambda([] {
-                            FGlobalTabmanager::Get()->TryInvokeTab(ToucanQueueTabName);
-                            }))
-                    );
-
-                    Sec.AddMenuEntry(
                         "EditingSession",
                         FText::FromString("Editing Session"),
                         FText::FromString("Open the Editing Session tab."),
@@ -96,57 +78,6 @@ private:
         );
     }
 
-    TSharedRef<SDockTab> SpawnQueueControlTab(const FSpawnTabArgs&)
-    {
-        return SNew(SDockTab).TabRole(ETabRole::NomadTab)
-        [
-            SNew(SBorder).Padding(8)
-            [
-                SNew(SVerticalBox)
-
-                // Queue animations in folder
-                + SVerticalBox::Slot().AutoHeight().Padding(0,0,0,6)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Queue all animations in folder")))
-                    .OnClicked_Lambda([this]()
-                    {
-                        OpenFolderAndEnqueue();
-                        return FReply::Handled();
-                    })
-                ]
-
-                // Queue animation (single)
-                + SVerticalBox::Slot().AutoHeight().Padding(0,0,0,6)
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Queue animations by hand")))
-                    .OnClicked_Lambda([this]()
-                    {
-                        OpenAssetDialogAndEnqueue();
-                        return FReply::Handled();
-                    })
-                ]
-
-                // Current queue
-                + SVerticalBox::Slot().AutoHeight()
-                [
-                    SNew(SButton)
-                    .Text(FText::FromString(TEXT("Current queue")))
-                    .OnClicked_Lambda([this]()
-                    {
-                        auto Win = SNew(SWindow)
-                            .Title(FText::FromString(TEXT("Toucan – Current Queue")))
-                            .ClientSize(FVector2D(520, 420))
-                            .SupportsMaximize(false).SupportsMinimize(false);
-                        Win->SetContent(SNew(SQueueWindow));
-                        FSlateApplication::Get().AddWindow(Win);
-                        return FReply::Handled();
-                    })
-                ]
-            ]
-        ];
-    }
     TSharedRef<SDockTab> SpawnEditingSessionTab(const FSpawnTabArgs&)
     {
         const TSharedRef<SEditingSessionWindow> SessionWidget = SNew(SEditingSessionWindow);
