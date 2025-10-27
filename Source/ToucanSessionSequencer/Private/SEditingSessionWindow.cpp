@@ -33,7 +33,27 @@ void SEditingSessionWindow::Construct(const FArguments&)
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueRemovalControlsRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSessionControlsRow()]
-                        + SVerticalBox::Slot().FillHeight(1.f)[BuildQueueList()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                        + SVerticalBox::Slot()
+                        .AutoHeight()
+                        .Padding(0, 0, 0, 8)
+                        [
+                            SNew(SBorder)
+                                .Padding(8)
+                                [
+                                    SNew(SVerticalBox)
+                                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
+                                        [
+                                            SNew(STextBlock)
+                                                .Text(FText::FromString(TEXT("Queue:")))
+                                                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+                                        ]
+                                        + SVerticalBox::Slot().FillHeight(1.f)
+                                        [
+                                            BuildQueueList()
+                                        ]
+                                ]
+                        ]
                 ]
         ];
 
@@ -242,11 +262,32 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
     return SNew(STableRow<TSharedPtr<FQueuedAnim>>, Owner)
         [
             SNew(SHorizontalBox)
-
-                // --- Main text ---
+                + SHorizontalBox::Slot()
+                .AutoWidth()
+                .VAlign(VAlign_Center)
+                [
+                    // Load this specific animation
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("->")))
+                        .IsEnabled_Lambda([this, Item]() {
+                        int32 RowIndex = Rows.IndexOfByKey(Item);
+                        return RowIndex != CurrentIndex; // disable for current
+                            })
+                        .OnClicked_Lambda([this, Item]() {
+                        int32 RowIndex = Rows.IndexOfByKey(Item);
+                        if (RowIndex != INDEX_NONE)
+                        {
+                            CurrentIndex = RowIndex;
+                            LoadAnimationAtIndex(RowIndex);
+                            RefreshQueue();
+                        }
+                        return FReply::Handled();
+                            })
+                ]
                 + SHorizontalBox::Slot()
                 .FillWidth(1.f)
                 .VAlign(VAlign_Center)
+                .Padding(8.f, 0.f, 0.f, 0.f)
                 [
                     SNew(STextBlock)
                         .Text_Lambda([this, Item]() {
@@ -496,4 +537,57 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
 
     return FReply::Handled();
+}
+
+void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
+{
+    const auto& All = FSeqQueue::Get().GetAll();
+    if (!All.IsValidIndex(TargetIndex))
+        return;
+
+    CurrentIndex = TargetIndex;
+
+    if (ListView.IsValid())
+        ListView->RebuildList();
+
+    UObject* AnimObject = All[CurrentIndex].Path.TryLoad();
+    if (!AnimObject)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation at index %d."), TargetIndex);
+        return;
+    }
+
+    // Check for "Processed" metadata
+    if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
+    {
+        const FString AnimName = AnimObject->GetName();
+        const FString AnimPath = All[CurrentIndex].Path.ToString();
+
+        const FText Title = FText::FromString(TEXT("Processed Animation Detected"));
+        const FText Message = FText::Format(
+            FText::FromString(TEXT("Animation:\t'{0}'\nPath:\t'{1}'\nNote:\tis marked as 'Processed'.\nAction:\tdo you want to load it anyway?")),
+            FText::FromString(AnimName),
+            FText::FromString(AnimPath)
+        );
+
+        const EAppReturnType::Type Response = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
+        if (Response == EAppReturnType::No)
+        {
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Skipped processed animation: %s"), *AnimPath);
+            return;
+        }
+    }
+
+    UAnimSequence* Anim = Cast<UAnimSequence>(AnimObject);
+    if (!Anim)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Invalid animation type."));
+        return;
+    }
+
+    UObject* RigObj = SelectedRig.LoadSynchronous();
+
+    FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), TargetIndex, *Anim->GetName());
 }
