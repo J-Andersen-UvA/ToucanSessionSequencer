@@ -149,10 +149,38 @@ private:
     }
     TSharedRef<SDockTab> SpawnEditingSessionTab(const FSpawnTabArgs&)
     {
-        return SNew(SDockTab).TabRole(ETabRole::NomadTab)
-        [
-            SNew(SEditingSessionWindow)
-        ];
+        const TSharedRef<SEditingSessionWindow> SessionWidget = SNew(SEditingSessionWindow);
+
+        TSharedRef<SDockTab> DockTab =
+            SNew(SDockTab)
+            .TabRole(ETabRole::NomadTab)
+            [
+                SessionWidget
+            ];
+
+        DockTab->SetCanCloseTab(SDockTab::FCanCloseTab::CreateLambda([]() -> bool
+            {
+                const FText Title = FText::FromString(TEXT("Confirm close"));
+                const FText Message = FText::FromString(
+                    TEXT("Warning: Do you want to stop the session? Unsaved progress will be lost.\n\n")
+                    TEXT("Yes closes the sequencer as well. No keeps the window open."));
+
+                const EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
+
+                if (Result == EAppReturnType::Yes)
+                {
+                    if (GEditor)
+                    {
+                        if (auto* AssetSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+                            AssetSubsystem->CloseAllAssetEditors();
+                    }
+                    return true;   // allow tab to close
+                }
+
+                return false;      // block close
+            }));
+
+        return DockTab;
     }
 
     // ----- helpers -----
