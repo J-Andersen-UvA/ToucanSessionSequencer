@@ -20,6 +20,8 @@ public:
 private:
     TSharedRef<SWidget> BuildSelectionRow();
     TSharedRef<SWidget> BuildStatusRow();
+    TSharedRef<SWidget> BuildQueueAdditionControlsRow();
+    TSharedRef<SWidget> BuildQueueRemovalControlsRow();
     TSharedRef<SWidget> BuildSessionControlsRow();
     TSharedRef<SWidget> BuildQueueList();
 

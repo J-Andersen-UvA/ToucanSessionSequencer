@@ -13,10 +13,13 @@
 #include "EditorAssetLibrary.h"
 #include "UObject/TopLevelAssetPath.h"
 #include "Misc/MessageDialog.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "QueueControls.h"
 
 void SEditingSessionWindow::Construct(const FArguments&)
 {
     RefreshQueue();
+    FSeqQueue::Get().OnQueueChanged().AddSP(this, &SEditingSessionWindow::RefreshQueue);
 
     ChildSlot
         [
@@ -25,7 +28,10 @@ void SEditingSessionWindow::Construct(const FArguments&)
                     SNew(SVerticalBox)
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSelectionRow()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildStatusRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(3.0f)]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueAdditionControlsRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueRemovalControlsRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSessionControlsRow()]
                         + SVerticalBox::Slot().FillHeight(1.f)[BuildQueueList()]
                 ]
@@ -111,6 +117,48 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
         ];
 }
 
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueAdditionControlsRow()
+{
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Queue animations from: ")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("folder")))
+                .OnClicked_Lambda([]{ FQueueControls::AddAnimationsFromFolder(); return FReply::Handled(); })
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("anim sequence(s)")))
+                .OnClicked_Lambda([]{ FQueueControls::AddAnimationsByHand(); return FReply::Handled(); })
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueRemovalControlsRow()
+{
+    return SNew(SHorizontalBox)
+    +SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        [
+            SNew(STextBlock).Text(FText::FromString(TEXT("Remove queued animations: ")))
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("all animations")))
+                .OnClicked_Lambda([] { FQueueControls::RemoveAllAnimations(); return FReply::Handled(); })
+        ]
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        [
+            SNew(SButton)
+                .Text(FText::FromString(TEXT("marked processed")))
+                .OnClicked_Lambda([] { FQueueControls::RemoveMarkedProcessedAnimations(); return FReply::Handled(); })
+        ];
+}
+
 TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
 {
     return SNew(SHorizontalBox)
@@ -192,24 +240,114 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
     TSharedPtr<FQueuedAnim> Item, const TSharedRef<STableViewBase>& Owner)
 {
     return SNew(STableRow<TSharedPtr<FQueuedAnim>>, Owner)
-    [
-        SNew(STextBlock)
-            .Text_Lambda([this, Item]() {
-            int32 RowIndex = Rows.IndexOfByKey(Item);
-            FString Label = Item->DisplayName.ToString();
-            if (RowIndex == CurrentIndex)
-            {
-                Label += TEXT("  <-- editing");
-            }
-            return FText::FromString(Label);
-                })
-            .ColorAndOpacity_Lambda([this, Item]() {
-            int32 RowIndex = Rows.IndexOfByKey(Item);
-            return (RowIndex == CurrentIndex)
-                ? FLinearColor(0.2f, 0.4f, 1.0f)
-                : FLinearColor::White;
-                })
-    ];
+        [
+            SNew(SHorizontalBox)
+
+                // --- Main text ---
+                + SHorizontalBox::Slot()
+                .FillWidth(1.f)
+                .VAlign(VAlign_Center)
+                [
+                    SNew(STextBlock)
+                        .Text_Lambda([this, Item]() {
+                        if (!Item.IsValid())
+                            return FText::GetEmpty();
+
+                        int32 RowIndex = Rows.IndexOfByKey(Item);
+                        FString Label = Item->DisplayName.ToString();
+
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                        if (Asset)
+                        {
+                            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
+                            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
+                                Label += TEXT(" (Already processed?)");
+                        }
+
+                        if (RowIndex == CurrentIndex)
+                            Label += TEXT("  <-- editing");
+
+                        return FText::FromString(Label);
+                            })
+                        .ColorAndOpacity_Lambda([this, Item]() {
+                        if (!Item.IsValid())
+                            return FLinearColor::White;
+
+                        int32 RowIndex = Rows.IndexOfByKey(Item);
+                        if (RowIndex == CurrentIndex)
+                            return FLinearColor(0.2f, 0.4f, 1.0f); // blue highlight
+
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                        if (Asset)
+                        {
+                            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
+                            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
+                                return FLinearColor::Red;
+                        }
+
+                        return FLinearColor::White;
+                            })
+                ]
+
+            // --- "Unmark processed" button, only visible if processed ---
+            + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Unmark processed")))
+                        .Visibility_Lambda([Item]() {
+                        if (!Item.IsValid())
+                            return EVisibility::Collapsed;
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                        if (!Asset)
+                            return EVisibility::Collapsed;
+                        return UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True")
+                            ? EVisibility::Visible
+                            : EVisibility::Collapsed;
+                            })
+                        .OnClicked_Lambda([this, Item]() {
+                        if (Item.IsValid())
+                        {
+                            UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
+                            if (Asset)
+                            {
+                                UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("False"));
+                                UEditorAssetLibrary::SaveLoadedAsset(Asset);
+                                RefreshQueue();
+                            }
+                        }
+                        return FReply::Handled();
+                            })
+                ]
+
+            // --- "Remove" button ---
+            + SHorizontalBox::Slot()
+                .AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Remove")))
+                        .OnClicked_Lambda([Item]() {
+                        const auto& All = FSeqQueue::Get().GetAll();
+                        if (!Item.IsValid())
+                            return FReply::Handled();
+
+                        int32 Index = INDEX_NONE;
+                        for (int32 i = 0; i < All.Num(); ++i)
+                        {
+                            if (All[i].Path == Item->Path)
+                            {
+                                Index = i;
+                                break;
+                            }
+                        }
+
+                        if (Index != INDEX_NONE)
+                            FSeqQueue::Get().RemoveAt(Index);
+
+                        return FReply::Handled();
+                            })
+                ]
+        ];
 }
 
 FReply SEditingSessionWindow::OnSelectSkeletalMesh()

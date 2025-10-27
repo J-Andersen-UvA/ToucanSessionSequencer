@@ -27,10 +27,13 @@ public:
         return S;
     }
 
+    DECLARE_MULTICAST_DELEGATE(FOnQueueChanged);
+    FOnQueueChanged& OnQueueChanged() { return QueueChanged; }
+
     void Load();
     void Save() const;
 
-    void Clear()                  { Items.Reset(); }
+    void Clear() { Items.Reset(); Save(); QueueChanged.Broadcast(); }
     void Add(const FAssetData& A);
     void AddPath(const FSoftObjectPath& P, const FText& Nice);
     bool RemoveAt(int32 Index);
@@ -43,4 +46,6 @@ private:
 
 private:
     TArray<FQueuedAnim> Items;
+    FOnQueueChanged QueueChanged;
+
 };
