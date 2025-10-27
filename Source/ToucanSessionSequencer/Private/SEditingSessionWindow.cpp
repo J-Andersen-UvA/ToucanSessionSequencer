@@ -293,6 +293,16 @@ FReply SEditingSessionWindow::OnSelectOutputFolder()
 
 FReply SEditingSessionWindow::OnBakeSaveAnimation()
 {
+    const auto& All = FSeqQueue::Get().GetAll();
+    if (!All.IsValidIndex(CurrentIndex))
+        return FReply::Handled();
+
+    const FQueuedAnim& CurrentAnim = All[CurrentIndex];
+    FString SourceAnimPath = CurrentAnim.Path.ToString();
+
+    FString AnimName = FPaths::GetBaseFilename(SourceAnimPath);
+
+    FEditingSessionSequencerHelper::BakeAndSaveAnimation(AnimName, SourceAnimPath);
     return FReply::Handled();
 }
 
