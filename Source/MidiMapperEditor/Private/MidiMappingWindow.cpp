@@ -11,7 +11,105 @@
 #include "Misc/ConfigCacheIni.h"
 #include "UObject/SoftObjectPath.h"
 #include "ControlRig.h"
+#include "Rigs/RigHierarchy.h"
+#include "Rigs/RigControlHierarchy.h"
+#include "Rigs/RigHierarchyContainer.h"
+#include "Units/RigUnitContext.h"
 #define GRouter FMidiMapperModule::GetRouter()
+
+static FString RigControlTypeToString(ERigControlType Type)
+{
+    switch (Type)
+    {
+    case ERigControlType::Float: return TEXT("Float");
+    case ERigControlType::Bool: return TEXT("Bool");
+    case ERigControlType::Integer: return TEXT("Int");
+    case ERigControlType::Vector2D: return TEXT("Vec2D");
+    case ERigControlType::Position: return TEXT("Position");
+    case ERigControlType::Rotator: return TEXT("Rotator");
+    case ERigControlType::Scale: return TEXT("Scale");
+    case ERigControlType::Transform: return TEXT("Transform");
+    case ERigControlType::TransformNoScale: return TEXT("TransformNoScale");
+    default: return TEXT("Other");
+    }
+}
+
+UControlRig* LoadControlRigFromPath(const FString& RigPath)
+{
+    if (RigPath.IsEmpty())
+        return nullptr;
+
+    UObject* RigAsset = FSoftObjectPath(RigPath).TryLoad();
+    if (!RigAsset)
+        return nullptr;
+
+    // Case 1: Blueprint-based ControlRig asset
+    if (UBlueprint* RigBP = Cast<UBlueprint>(RigAsset))
+    {
+        if (UClass* GenClass = RigBP->GeneratedClass)
+        {
+            return Cast<UControlRig>(GenClass->GetDefaultObject());
+        }
+    }
+
+    // Case 2: Direct ControlRig asset
+    if (UControlRig* DirectRig = Cast<UControlRig>(RigAsset))
+    {
+        return DirectRig;
+    }
+
+    // Case 3: Sometimes it's a ControlRigBlueprintGeneratedClass
+    if (UClass* RigClass = Cast<UClass>(RigAsset))
+    {
+        return Cast<UControlRig>(RigClass->GetDefaultObject());
+    }
+
+    return nullptr;
+}
+
+void SMidiMappingWindow::PopulateFromRig(UControlRig* ControlRig)
+{
+    if (!ControlRig)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MidiMapping] PopulateFromRig: ControlRig is null"));
+        return;
+    }
+
+    Rows.Empty();
+
+    URigHierarchy* Hierarchy = ControlRig->GetHierarchy();
+    if (!Hierarchy)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MidiMapping] PopulateFromRig: No hierarchy found"));
+        return;
+    }
+
+    const TArray<FRigControlElement*> Controls = Hierarchy->GetControls();
+    for (const FRigControlElement* CtrlElem : Controls)
+    {
+        if (!CtrlElem)
+            continue;
+
+        const FName ControlName = CtrlElem->GetFName();
+        const ERigControlType ControlType = CtrlElem->Settings.ControlType;
+
+        auto Row = MakeShared<FControlRow>();
+        Row->ActionName = ControlName.ToString();
+        Row->TargetControl = FString::Printf(TEXT("Rig.%s"), *Row->ActionName);
+        Row->Modus = RigControlTypeToString(ControlType);
+        Row->BoundControlId = -1;
+
+        Rows.Add(Row);
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[MidiMapping] Populated %d controls from rig '%s'"),
+        Rows.Num(), *ControlRig->GetName());
+
+    if (MappingListView.IsValid())
+    {
+        MappingListView->RequestListRefresh();
+    }
+}
 
 void SMidiMappingWindow::Construct(const FArguments& InArgs)
 {
@@ -32,15 +130,6 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
             ActiveDeviceName = *AvailableDevices[0];
     }
 
-    // Fill static control rows
-    Rows = {
-        MakeShared<FControlRow>(FControlRow{TEXT("Queue Load Next"), TEXT("Queue.LoadNext"), TEXT("Trigger"), -1}),
-        MakeShared<FControlRow>(FControlRow{TEXT("Queue Bake & Save"), TEXT("Queue.BakeSave"), TEXT("Trigger"), -1}),
-        MakeShared<FControlRow>(FControlRow{TEXT("Sequencer Next Frame"), TEXT("Sequencer.NextFrame"), TEXT("Trigger"), -1}),
-        MakeShared<FControlRow>(FControlRow{TEXT("Rig Ctrl Index 1"), TEXT("Rig.Index1"), TEXT("Analog"), -1})
-    };
-
-    // Layout
     ChildSlot
     [
         SNew(SVerticalBox)
@@ -100,7 +189,6 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
 
 void SMidiMappingWindow::RefreshRigAndRows()
 {
-    // TODO: query ToucanSessionSequencer for active rig
     FString RigPath;
     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), RigPath, GEditorPerProjectIni);
 
@@ -111,38 +199,18 @@ void SMidiMappingWindow::RefreshRigAndRows()
         return;
     }
 
-    TSoftObjectPtr<UObject> RigAsset = TSoftObjectPtr<UObject>(FSoftObjectPath(RigPath));
-    UObject* Loaded = RigAsset.IsValid() ? RigAsset.Get() : RigAsset.LoadSynchronous();
-    if (Loaded)
+    UControlRig* ControlRig = LoadControlRigFromPath(RigPath);
+    if (ControlRig)
     {
-        ActiveRigName = Loaded->GetName();
-        UE_LOG(LogTemp, Display, TEXT("[MidiMapping] Loaded rig from config: %s"), *RigPath);
+        ActiveRigName = ControlRig->GetName();
+        UE_LOG(LogTemp, Display, TEXT("[MidiMapping] Loaded ControlRig: %s"), *ActiveRigName);
+        PopulateFromRig(ControlRig);
     }
     else
     {
         ActiveRigName = TEXT("Invalid");
-        UE_LOG(LogTemp, Warning, TEXT("[MidiMapping] Failed to load rig from config: %s"), *RigPath);
+        UE_LOG(LogTemp, Warning, TEXT("[MidiMapping] Could not resolve rig from: %s"), *RigPath);
     }
-
-    Rows.Empty();
-    Rows = {
-    MakeShared<FControlRow>(FControlRow{TEXT("Queue Load Next"), TEXT("")}),
-    MakeShared<FControlRow>(FControlRow{TEXT("Queue Bake & Save"), TEXT("")}),
-    MakeShared<FControlRow>(FControlRow{TEXT("Sequencer Next Frame"), TEXT("")}),
-    MakeShared<FControlRow>(FControlRow{TEXT("Rig Ctrl Index 1"), TEXT("")})
-    };
-
-    // Static examples; replace with real control list
-    auto Add = [this](const TCHAR* Name, const TCHAR* Target, const TCHAR* Modus)
-        {
-            auto R = MakeShared<FControlRow>();
-            R->ActionName = Name; R->TargetControl = Target; R->Modus = Modus; R->BoundControlId = -1;
-            Rows.Add(R);
-        };
-    Add(TEXT("Queue_LoadNext"), TEXT("Queue.LoadNext"), TEXT("Trigger"));
-    Add(TEXT("Queue_BakeSave"), TEXT("Queue.BakeSave"), TEXT("Trigger"));
-    Add(TEXT("Sequencer_NextFrame"), TEXT("Sequencer.NextFrame"), TEXT("Trigger"));
-    Add(TEXT("Rig_Ctrl_Index1"), TEXT("Rig.Index1"), TEXT("Float"));
 }
 
 void SMidiMappingWindow::SetActiveDevice(const FString& Device)

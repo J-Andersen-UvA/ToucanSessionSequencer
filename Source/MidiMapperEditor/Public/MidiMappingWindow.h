@@ -1,5 +1,6 @@
 #pragma once
 #include "Widgets/SCompoundWidget.h"
+#include "ControlRig.h"
 
 class SMidiMappingWindow : public SCompoundWidget
 {
@@ -33,6 +34,7 @@ private:
     void RefreshRigAndRows();    // fetch rig + static actions
     void RefreshBindings();      // read manager.GetAll() into Rows
     void SetActiveDevice(const FString& Device);
+    void PopulateFromRig(UControlRig* ControlRig);
 
     // UI callbacks
     TSharedRef<ITableRow> GenerateMappingRow(
