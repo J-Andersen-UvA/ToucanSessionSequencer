@@ -10,6 +10,11 @@
             "Name": "ToucanSessionSequencer",
             "Type": "Editor",
             "LoadingPhase": "Default"
+        },
+        {
+            "Name": "MidiMapper",
+            "Type": "Editor",
+            "LoadingPhase": "Default"
         }
     ],
     "EnabledByDefault": true
