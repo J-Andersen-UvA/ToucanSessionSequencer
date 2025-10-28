@@ -1,7 +1,9 @@
 #pragma once
 #include "Modules/ModuleManager.h"
 
-class FMidiMapperModule : public IModuleInterface
+class UMidiEventRouter;
+
+class MIDIMAPPER_API FMidiMapperModule : public IModuleInterface
 {
 public:
     virtual void StartupModule() override;
@@ -16,4 +18,6 @@ public:
     {
         return FModuleManager::Get().IsModuleLoaded("MidiMapper");
     }
+
+    static UMidiEventRouter* GetRouter();
 };

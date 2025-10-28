@@ -6,15 +6,17 @@
 #include "LevelSequence.h"
 #include "MovieScene.h"
 #include "MovieSceneBinding.h"
+#include "ControlRig.h"
 
 class ULevelSequence;
 class ASkeletalMeshActor;
+class UControlRig;
 
 /**
  * Handles loading/creating Level Sequences and populating them
  * with SkeletalMesh, Rig, and Animation for Toucan editing sessions.
  */
-class FEditingSessionSequencerHelper
+class TOUCANSESSIONSEQUENCER_API FEditingSessionSequencerHelper
 {
 public:
     static void LoadNextAnimation(TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
@@ -32,10 +34,12 @@ public:
     static void SetActiveSkeletalMeshComponent(USkeletalMeshComponent* InComp);
     static USkeletalMeshComponent* GetActiveSkeletalMeshComponent();
     static void BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath);
+    static UControlRig* GetActiveRig();
 
 private:
     static TWeakObjectPtr<ULevelSequence> ActiveSequence;
     static TWeakObjectPtr<USkeletalMeshComponent> ActiveSkeletalMeshComponent;
+    static TWeakObjectPtr<UControlRig> ActiveRig;
 
 private:
     // --- Internal helpers ---

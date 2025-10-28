@@ -36,6 +36,11 @@ void UMidiEventRouter::BindAfterEngineInit()
     TryBind();
 }
 
+void UMidiEventRouter::ArmLearnOnce()
+{
+    bLearning = true;
+}
+
 void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
 {
     if (!Manager)
@@ -55,6 +60,13 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
     if (ControlID < 0)
     {
         UE_LOG(LogTemp, Warning, TEXT("MidiEventRouter: couldn't parse control id from %s"), *Value.Id);
+        return;
+    }
+
+    if (bLearning)
+    {
+        bLearning = false;
+        OnLearn.Broadcast(ControlID);
         return;
     }
 

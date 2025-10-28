@@ -10,21 +10,35 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
-    TSharedPtr<SListView<TSharedPtr<FString>>> MappingList;
+    // header state
+    FString ActiveRigName;
+    FString ActiveDeviceName;
 
-    FReply OnLearnClicked(FName ActionName);
-    FReply OnUnbindClicked(FName ActionName);
-    FReply OnSaveClicked();
+    // Device list
+    TArray<TSharedPtr<FString>> AvailableDevices;
+    TSharedPtr<SComboBox<TSharedPtr<FString>>> DeviceCombo;
 
-    void RefreshMappings();
-
-    // Simple model struct
+    // table model
     struct FControlRow
     {
         FString ActionName;
         FString TargetControl;
-        FString MidiId;
         FString Modus;
+        int32 BoundControlId;
     };
     TArray<TSharedPtr<FControlRow>> Rows;
+    TSharedPtr<SListView<TSharedPtr<FControlRow>>> MappingListView;
+
+    // helpers
+    void RefreshRigAndRows();    // fetch rig + static actions
+    void RefreshBindings();      // read manager.GetAll() into Rows
+    void SetActiveDevice(const FString& Device);
+
+    // UI callbacks
+    TSharedRef<ITableRow> GenerateMappingRow(
+        TSharedPtr<FControlRow> InItem,
+        const TSharedRef<STableViewBase>& OwnerTable);
+    FReply OnLearnClicked(TSharedPtr<FControlRow> Row);
+    FReply OnUnbindClicked(TSharedPtr<FControlRow> Row);
+    void OnLearnedControl(int32 ControlId, TSharedPtr<FControlRow> Row);
 };

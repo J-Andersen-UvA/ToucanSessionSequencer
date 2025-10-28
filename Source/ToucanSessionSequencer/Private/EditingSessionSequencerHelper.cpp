@@ -31,6 +31,7 @@
 
 TWeakObjectPtr<ULevelSequence> FEditingSessionSequencerHelper::ActiveSequence;
 TWeakObjectPtr<USkeletalMeshComponent> FEditingSessionSequencerHelper::ActiveSkeletalMeshComponent;
+TWeakObjectPtr<UControlRig> FEditingSessionSequencerHelper::ActiveRig;
 
 void setLooping(ULevelSequence* LevelSequence)
 {
@@ -382,9 +383,12 @@ void FEditingSessionSequencerHelper::AddRigToSequence(
 
     // Determine the ControlRig class from either a ControlRig asset or a ControlRig Blueprint.
     UClass* RigClass = nullptr;
+    UControlRig* FoundRig = nullptr;
+
     if (RigObject->IsA(UControlRig::StaticClass()))
     {
         RigClass = RigObject->GetClass();
+        FoundRig = Cast<UControlRig>(RigObject);
     }
     else
     {
@@ -399,6 +403,11 @@ void FEditingSessionSequencerHelper::AddRigToSequence(
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Invalid or unsupported rig asset."));
         return;
+    }
+
+    if (FoundRig)
+    {
+        ActiveRig = FoundRig;
     }
 
     UWorld* World = GEditor->GetEditorWorldContext().World();
@@ -578,4 +587,18 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
 
     if (TempActor) { TempActor->Destroy(); }
 #endif
+}
+
+UControlRig* FEditingSessionSequencerHelper::GetActiveRig()
+{
+    UControlRig* Rig = ActiveRig.Get();
+    if (Rig)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] ActiveRig: %s"), *Rig->GetName());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] ActiveRig is null"));
+    }
+    return Rig;
 }

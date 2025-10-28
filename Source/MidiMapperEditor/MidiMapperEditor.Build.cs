@@ -15,8 +15,14 @@ public class MidiMapperEditor : ModuleRules
         // Includes by Toucan
         PrivateDependencyModuleNames.AddRange(new string[]
         {
-            "MidiMapper", "ToucanSessionSequencer"
+            "MidiMapper", "ToucanSessionSequencer", "UnrealMidi"
         });
+
+        PublicDependencyModuleNames.AddRange(new string[]
+        {
+            "ControlRig",
+        });
+
 
         if (Target.bBuildEditor == true)
         {

@@ -91,3 +91,16 @@ FString UMidiMappingManager::GetMappingFilePath() const
     IFileManager::Get().MakeDirectory(*Dir, true);
     return Dir / FString::Printf(TEXT("%s_%s.json"), *DeviceName, *RigName);
 }
+
+bool UMidiMappingManager::RemoveMapping(int32 ControlID)
+{
+    const bool bRemoved = ControlMappings.Remove(ControlID) > 0;
+    if (bRemoved) SaveMappings();
+    return bRemoved;
+}
+
+void UMidiMappingManager::RegisterOrUpdate(int32 ControlID, const FMidiMappedAction& Action)
+{
+    RegisterMapping(ControlID, Action);
+    SaveMappings();
+}

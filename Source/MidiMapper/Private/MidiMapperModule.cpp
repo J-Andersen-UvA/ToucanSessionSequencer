@@ -23,3 +23,8 @@ void FMidiMapperModule::ShutdownModule()
 {
     UE_LOG(LogTemp, Log, TEXT("MidiMapper module shut down."));
 }
+
+UMidiEventRouter* FMidiMapperModule::GetRouter()
+{
+    return GRouter;
+}

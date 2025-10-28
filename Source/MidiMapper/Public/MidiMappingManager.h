@@ -31,6 +31,9 @@ public:
     bool GetMapping(int32 ControlID, FMidiMappedAction& OutAction) const;
     void SaveMappings();
     void LoadMappings();
+    const TMap<int32, FMidiMappedAction>& GetAll() const { return ControlMappings; }
+    bool RemoveMapping(int32 ControlID);
+    void RegisterOrUpdate(int32 ControlID, const FMidiMappedAction& Action);
 
 private:
     FString DeviceName;

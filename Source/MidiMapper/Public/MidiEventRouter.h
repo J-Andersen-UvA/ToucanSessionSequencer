@@ -4,6 +4,8 @@
 #include "MidiMappingManager.h"
 #include "MidiEventRouter.generated.h"
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnMidiLearn, int32 /*ControlID*/);
+
 UCLASS()
 class MIDIMAPPER_API UMidiEventRouter : public UObject
 {
@@ -16,6 +18,11 @@ public:
     UFUNCTION()
     void OnMidiValueReceived(const FMidiControlValue& Value);
 
+    // learn API
+    void ArmLearnOnce();
+    bool IsLearning() const { return bLearning; }
+    FOnMidiLearn& OnMidiLearn() { return OnLearn; }
+
 private:
     UPROPERTY()
     UMidiMappingManager* Manager;
@@ -23,4 +30,6 @@ private:
     void TryBind();              // attempt immediate bind
     void BindAfterEngineInit();  // deferred bind
 
+    bool bLearning = false;
+    FOnMidiLearn OnLearn;
 };
