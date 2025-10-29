@@ -275,6 +275,8 @@ void SMidiMappingWindow::OnLearnedControl(int32 ControlId, TSharedPtr<FControlRo
     if (!Row.IsValid()) return;
     if (UMidiMappingManager* M = UMidiMappingManager::Get())
     {
+        M->Initialize(ActiveDeviceName, ActiveRigName); // ensure correct context
+
         FMidiMappedAction A;
         A.ActionName = FName(*Row->ActionName);
         A.TargetControl = FName(*Row->TargetControl);
@@ -291,7 +293,10 @@ FReply SMidiMappingWindow::OnUnbindClicked(TSharedPtr<FControlRow> Row)
     if (Row->BoundControlId >= 0)
     {
         if (UMidiMappingManager* M = UMidiMappingManager::Get())
+        {
+            M->Initialize(ActiveDeviceName, ActiveRigName);
             M->RemoveMapping(Row->BoundControlId); // autosave
+        }
         Row->BoundControlId = -1;
         RefreshBindings();
     }

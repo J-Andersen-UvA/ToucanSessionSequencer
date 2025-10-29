@@ -35,6 +35,8 @@ public:
                     }
                 });
         }
+
+        InitializeMappingsFromConfig();
     }
 
     virtual void ShutdownModule() override
@@ -44,6 +46,67 @@ public:
         FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(MidiMappingTabName);
     }
 
+
+    void InitializeMappingsFromConfig()
+    {
+        FString LastRig;
+        GConfig->GetString(
+            TEXT("ToucanEditingSession"),
+            TEXT("LastSelectedRig"),
+            LastRig,
+            GEditorPerProjectIni
+        );
+        if (!LastRig.IsEmpty())
+        {
+            // Convert from path to name
+            FString ObjectPath, ObjectName;
+            if (LastRig.Split(TEXT("."), &ObjectPath, &ObjectName))
+            {
+                LastRig = ObjectName;
+            }
+            else
+            {
+                // Fallback: extract from last path segment if it was just a path
+                LastRig = FPaths::GetCleanFilename(LastRig);
+            }
+        }
+        else
+        {
+            LastRig = TEXT("DefaultRig");
+        }
+
+        // Collect all sections in the ini
+        TArray<FString> SectionNames;
+        GConfig->GetSectionNames(GEditorPerProjectIni, SectionNames);
+
+        // Collect all ToucanMidiController devices
+        TArray<FString> DeviceNames;
+        for (const FString& Section : SectionNames)
+        {
+            if (Section.StartsWith(TEXT("ToucanMidiController.Device:")))
+            {
+                FString DeviceName;
+                Section.Split(TEXT("Device:"), nullptr, &DeviceName);
+                DeviceNames.Add(DeviceName);
+            }
+        }
+
+        if (DeviceNames.Num() == 0)
+        {
+            UE_LOG(LogTemp, Warning, TEXT("No ToucanMidiController devices found in %s"), *GEditorPerProjectIni);
+            return;
+        }
+
+        // Initialize the mapping manager for all listed devices
+        if (UMidiMappingManager* Manager = UMidiMappingManager::Get())
+        {
+            for (const FString& Device : DeviceNames)
+            {
+                Manager->Initialize(Device, LastRig);
+                UE_LOG(LogTemp, Log, TEXT("Loaded mapping for device '%s' with rig '%s'"), *Device, *LastRig);
+            }
+        }
+    }
 private:
     void RegisterMenus()
     {
