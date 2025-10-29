@@ -337,13 +337,32 @@ TSharedRef<ITableRow> SMidiMappingWindow::GenerateMappingRow(
             {
                 return SNew(SBox).Padding(CellPadding)
                     [
-                        SNew(SButton)
-                            .Text(FText::FromString("Learn"))
-                            .OnClicked_Lambda([W = OwnerWindow, R = RowItem]()
-                                {
-                                    if (auto P = W.Pin()) P->OnLearnClicked(R);
-                                    return FReply::Handled();
-                                })
+                        SNew(SHorizontalBox)
+
+                            + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            .Padding(FMargin(0, 0, 5, 0))
+                            [
+                                SNew(SButton)
+                                    .Text(FText::FromString("Learn"))
+                                    .OnClicked_Lambda([W = OwnerWindow, R = RowItem]()
+                                        {
+                                            if (auto P = W.Pin()) P->OnLearnClicked(R);
+                                            return FReply::Handled();
+                                        })
+                            ]
+
+                        + SHorizontalBox::Slot()
+                            .AutoWidth()
+                            [
+                                SNew(SButton)
+                                    .Text(FText::FromString("Unlearn"))
+                                    .OnClicked_Lambda([W = OwnerWindow, R = RowItem]()
+                                        {
+                                            if (auto P = W.Pin()) P->OnUnbindClicked(R);
+                                            return FReply::Handled();
+                                        })
+                            ]
                     ];
             }
             else if (ColumnName == "Mapping")
