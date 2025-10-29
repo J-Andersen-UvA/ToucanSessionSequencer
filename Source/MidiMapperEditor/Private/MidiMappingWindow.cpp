@@ -259,7 +259,14 @@ void SMidiMappingWindow::RefreshBindings()
 
 FReply SMidiMappingWindow::OnLearnClicked(TSharedPtr<FControlRow> Row)
 {
-    UE_LOG(LogTemp, Log, TEXT("Learn clicked for: %s"), *Row->ActionName);
+    if (!FMidiMapperModule::GetRouter())
+        return FReply::Handled();
+
+    UE_LOG(LogTemp, Log, TEXT("Learning for action: %s"), *Row->ActionName);
+
+    FMidiMapperModule::GetRouter()->OnMidiLearn().AddSP(this, &SMidiMappingWindow::OnLearnedControl, Row);
+    FMidiMapperModule::GetRouter()->ArmLearnOnce();
+
     return FReply::Handled();
 }
 
