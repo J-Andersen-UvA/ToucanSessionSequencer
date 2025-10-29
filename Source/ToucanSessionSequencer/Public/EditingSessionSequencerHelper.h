@@ -36,6 +36,11 @@ public:
     static void BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath);
     static UControlRig* GetActiveRig();
 
+    static void BakeAndSave();
+    static void StepFrames(int32 Frames);
+    static void KeyAllControls();
+    static void KeyZeroAll();
+
 private:
     static TWeakObjectPtr<ULevelSequence> ActiveSequence;
     static TWeakObjectPtr<USkeletalMeshComponent> ActiveSkeletalMeshComponent;

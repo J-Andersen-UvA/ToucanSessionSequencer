@@ -15,6 +15,8 @@
 #include "Rigs/RigControlHierarchy.h"
 #include "Rigs/RigHierarchyContainer.h"
 #include "Units/RigUnitContext.h"
+#include "MidiActionNames.h"
+
 #define GRouter FMidiMapperModule::GetRouter()
 
 static FString RigControlTypeToString(ERigControlType Type)
@@ -74,8 +76,6 @@ void SMidiMappingWindow::PopulateFromRig(UControlRig* ControlRig)
         UE_LOG(LogTemp, Warning, TEXT("[MidiMapping] PopulateFromRig: ControlRig is null"));
         return;
     }
-
-    Rows.Empty();
 
     URigHierarchy* Hierarchy = ControlRig->GetHierarchy();
     if (!Hierarchy)
@@ -189,6 +189,18 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
 
 void SMidiMappingWindow::RefreshRigAndRows()
 {
+    Rows.Empty();
+
+    for (const FMidiActionDef& Def : FMidiActionNames::GetAll())
+    {
+        auto Row = MakeShared<FControlRow>();
+        Row->ActionName = Def.Label;
+        Row->TargetControl = Def.Id.ToString();
+        Row->Modus = Def.Type;
+        Row->BoundControlId = -1;
+        Rows.Add(Row);
+    }
+
     FString RigPath;
     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), RigPath, GEditorPerProjectIni);
 

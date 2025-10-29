@@ -16,7 +16,7 @@ public class MidiMapper : ModuleRules
         PublicDependencyModuleNames.AddRange(new string[]
         {
             "UnrealMidi",
-            "ToucanSessionSequencer"
+            "ToucanSessionSequencer",
         });
     }
 }

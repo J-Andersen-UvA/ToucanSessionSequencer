@@ -602,3 +602,8 @@ UControlRig* FEditingSessionSequencerHelper::GetActiveRig()
     }
     return Rig;
 }
+
+void FEditingSessionSequencerHelper::BakeAndSave() { /* call OnBakeSaveAnimation on current session */ }
+void FEditingSessionSequencerHelper::StepFrames(int32 Frames) { /* advance sequencer timeline */ }
+void FEditingSessionSequencerHelper::KeyAllControls() {}
+void FEditingSessionSequencerHelper::KeyZeroAll() {}

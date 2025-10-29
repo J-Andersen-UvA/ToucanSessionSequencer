@@ -3,6 +3,9 @@
 #include "Widgets/Docking/SDockTab.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
+#include "MidiActionExecutor.h"
+#include "MidiMapperModule.h"
+#include "MidiEventRouter.h"
 #include "MidiMappingWindow.h"
 
 static const FName MidiMappingTabName(TEXT("ToucanMidiMapping"));
@@ -21,6 +24,17 @@ public:
         // Add to the same "Toucan sequencer" menu
         UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
             this, &FMidiMapperEditorModule::RegisterMenus));
+
+        if (auto* Router = FMidiMapperModule::GetRouter())
+        {
+            Router->OnMidiAction().AddLambda([](FName ActionName, const FMidiControlValue& Value)
+                {
+                    if (UMidiActionExecutor* Exec = GEditor->GetEditorSubsystem<UMidiActionExecutor>())
+                    {
+                        Exec->ExecuteMappedAction(ActionName, Value);
+                    }
+                });
+        }
     }
 
     virtual void ShutdownModule() override
