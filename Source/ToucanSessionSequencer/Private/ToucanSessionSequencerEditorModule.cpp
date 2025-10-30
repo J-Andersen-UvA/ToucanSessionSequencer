@@ -19,6 +19,8 @@
 #include "Editor.h"
 #include "SeqQueue.h"
 #include "SEditingSessionWindow.h"
+#include "Interfaces/IPluginManager.h"
+#include "Styling/SlateStyleRegistry.h"
 
 static const FName ToucanEditingTabName(TEXT("ToucanEditingSession"));
 
@@ -27,9 +29,25 @@ class FToucanSequencerEditorModule : public IModuleInterface
 public:
     virtual void StartupModule() override
     {
-        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(ToucanEditingTabName,
+        // Do styling
+        FSlateStyleSet* Style = new FSlateStyleSet("ToucanSessionSequencerStyle");
+        Style->SetContentRoot(IPluginManager::Get().FindPlugin("ToucanSessionSequencer")->GetBaseDir() / TEXT("Resources"));
+        Style->Set(
+            "ToucanSessionSequencer.TabIcon",
+            new FSlateVectorImageBrush(
+                Style->RootToContentDir(TEXT("Icons/toucanWhite"), TEXT(".svg")),
+                FVector2D(16.0f, 16.0f),
+                FLinearColor::White
+            )
+        );
+        FSlateStyleRegistry::RegisterSlateStyle(*Style);
+
+        // Spawn tab
+        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+            ToucanEditingTabName,
             FOnSpawnTab::CreateRaw(this, &FToucanSequencerEditorModule::SpawnEditingSessionTab))
             .SetDisplayName(FText::FromString(TEXT("Editing Session")))
+            .SetIcon(FSlateIcon("ToucanSessionSequencerStyle", "ToucanSessionSequencer.TabIcon"))
             .SetMenuType(ETabSpawnerMenuType::Hidden);
 
         // Add to main menu (e.g. Window → Developer Tools)
