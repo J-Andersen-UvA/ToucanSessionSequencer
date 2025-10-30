@@ -4,6 +4,10 @@
 #include "Widgets/SCompoundWidget.h"
 #include "SeqQueue.h"
 #include "OutputHelper.h"
+#include "Styling/SlateStyle.h"
+#include "Styling/SlateStyleRegistry.h"
+#include "Brushes/SlateImageBrush.h"
+#include "Interfaces/IPluginManager.h"
 
 /**
  * Editing Session main window.
@@ -18,12 +22,17 @@ public:
     void Construct(const FArguments& InArgs);
 
 private:
-    TSharedRef<SWidget> BuildSelectionRow();
-    TSharedRef<SWidget> BuildStatusRow();
+    TSharedRef<SWidget> BuildSelectionAndStatusGrid();
+    TSharedRef<SWidget> BuildQueueControlsSection();
     TSharedRef<SWidget> BuildQueueAdditionControlsRow();
     TSharedRef<SWidget> BuildQueueRemovalControlsRow();
     TSharedRef<SWidget> BuildSessionControlsRow();
     TSharedRef<SWidget> BuildQueueList();
+    TSharedRef<SWidget> AddIconHere(const FString& IconName, const FVector2D& Size = FVector2D(16.f, 16.f));
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon, const FLinearColor& IconColor);
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon);
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, const bool bBold);
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text);
 
 private:
     // --- internal helpers ---

@@ -5,6 +5,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/SBoxPanel.h"
+#include "Styling/StyleColors.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
 #include "Misc/ConfigCacheIni.h"
@@ -16,6 +17,118 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "QueueControls.h"
 
+TSharedRef<SWidget> SEditingSessionWindow::AddIconHere(const FString& IconName, const FVector2D& Size)
+{
+    const FString ContentDir = IPluginManager::Get().FindPlugin(TEXT("ToucanSessionSequencer"))->GetBaseDir() / TEXT("Resources/Icons");
+    const FString IconPath = ContentDir / IconName + TEXT(".svg");
+
+    const FVector2D IconSize(18.f, 18.f);
+    return SNew(SImage)
+        .Image(new FSlateVectorImageBrush(IconPath, IconSize, FLinearColor::White))
+        .ColorAndOpacity(FLinearColor::White);
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(
+    const FString& IconName,
+    const FString& Text,
+    bool bBold /*= false*/,
+    bool bUseAppStyleIcon /*= false*/,
+    const FLinearColor& IconColor /*= FLinearColor(0,0,0,0)*/
+)
+{
+    const FVector2D IconSize(16.f, 16.f);
+    const FSlateBrush* IconBrush = nullptr;
+
+    if (bUseAppStyleIcon)
+    {
+        IconBrush = FAppStyle::GetBrush(*IconName);
+    }
+    else
+    {
+        IconBrush = new FSlateVectorImageBrush(
+            IPluginManager::Get().FindPlugin(TEXT("ToucanSessionSequencer"))->GetBaseDir()
+            / TEXT("Resources/Icons") / (IconName + TEXT(".svg")),
+            IconSize,
+            IconColor
+        );
+    }
+
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+        [
+            SNew(SImage)
+                .Image(IconBrush)
+                .ColorAndOpacity(
+                    (IconColor.R == 0.f && IconColor.G == 0.f && IconColor.B == 0.f && IconColor.A == 0.f)
+                    ? FSlateColor::UseForeground()
+                    : FSlateColor(IconColor)
+                )
+                .DesiredSizeOverride(IconSize)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+                .Text(FText::FromString(Text))
+                .Font(FCoreStyle::GetDefaultFontStyle(bBold ? "Bold" : "Regular", 10))
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon)
+{
+    const FVector2D IconSize(16.f, 16.f);
+    const FSlateBrush* IconBrush = nullptr;
+
+    if (bUseAppStyleIcon)
+    {
+        IconBrush = FAppStyle::GetBrush(*IconName);
+    }
+    else
+    {
+        IconBrush = new FSlateVectorImageBrush(
+            IPluginManager::Get().FindPlugin(TEXT("ToucanSessionSequencer"))->GetBaseDir()
+            / TEXT("Resources/Icons") / (IconName + TEXT(".svg")),
+            IconSize,
+            FLinearColor::White);
+    }
+
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+        [
+            SNew(SImage)
+                .Image(IconBrush)
+                .ColorAndOpacity(FLinearColor::White)
+                .DesiredSizeOverride(IconSize)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+                .Text(FText::FromString(Text))
+                .Font(FCoreStyle::GetDefaultFontStyle(bBold ? "Bold" : "Regular", 10))
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(const FString& IconName, const FString& Text, const bool bBold)
+{
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+        [
+            AddIconHere(IconName)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+                .Text(FText::FromString(Text))
+                .Font(bBold
+                    ? FCoreStyle::GetDefaultFontStyle("Bold", 10)
+                    : FCoreStyle::GetDefaultFontStyle("Regular", 10))
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(const FString& IconName, const FString& Text)
+{
+    return AddIconAndTextHere(IconName, Text, false);
+}
+
 void SEditingSessionWindow::Construct(const FArguments&)
 {
     RefreshQueue();
@@ -26,27 +139,20 @@ void SEditingSessionWindow::Construct(const FArguments&)
             SNew(SBorder).Padding(8)
                 [
                     SNew(SVerticalBox)
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSelectionRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildStatusRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueAdditionControlsRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildQueueRemovalControlsRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[BuildSessionControlsRow()]
-                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildSelectionAndStatusGrid()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildQueueControlsSection()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildSessionControlsRow()]
                         + SVerticalBox::Slot()
                         .AutoHeight()
                         .Padding(0, 0, 0, 8)
                         [
                             SNew(SBorder)
-                                .Padding(8)
+                                .Padding(FMargin(8, 6))
                                 [
                                     SNew(SVerticalBox)
                                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
                                         [
-                                            SNew(STextBlock)
-                                                .Text(FText::FromString(TEXT("Queue:")))
-                                                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+                                            AddIconAndTextHere(TEXT("queueClipboardWhite"), TEXT("Queue:"), true)
                                         ]
                                         + SVerticalBox::Slot().FillHeight(1.f)
                                         [
@@ -60,143 +166,215 @@ void SEditingSessionWindow::Construct(const FArguments&)
     LoadSettings();
 }
 
-TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionRow()
+TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
 {
-    return SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+    return SNew(SBorder)
+        .Padding(FMargin(8, 6))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
         [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Pick:")))
-        ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
-        [
-            SNew(SButton)
-                .Text(FText::FromString(TEXT("Skeletal Mesh")))
-                .OnClicked(this, &SEditingSessionWindow::OnSelectSkeletalMesh)
-        ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
-        [
-            SNew(SButton)
-                .Text(FText::FromString(TEXT("Control Rig")))
-                .OnClicked(this, &SEditingSessionWindow::OnSelectRig)
-        ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
-        [
-            SNew(SButton)
-                .Text(FText::FromString(TEXT("Output Folder")))
-                .OnClicked(this, &SEditingSessionWindow::OnSelectOutputFolder)
+            SNew(SVerticalBox)
+                + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 6)
+                [
+                    SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Selection")))
+                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+                ]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
+                [
+                    SNew(SGridPanel)
+                        // Column 0: Labels ("Pick:", "Mesh:")
+                        + SGridPanel::Slot(0, 0).Padding(0, 0, 4, 0).VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                                .Text(FText::FromString(TEXT("Select:")))
+                                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+                        ]
+                        // Column 1: Skeletal Mesh
+                        + SGridPanel::Slot(1, 0)
+                        [
+                            SNew(SButton)
+                                .OnClicked(this, &SEditingSessionWindow::OnSelectSkeletalMesh)
+                                [
+                                    AddIconAndTextHere(TEXT("ClassIcon.SkeletalMesh"), TEXT("Skeletal Mesh"), false, true)
+                                ]
+                        ]
+                    + SGridPanel::Slot(1, 1)
+                        [
+                            SNew(STextBlock)
+                                .Text_Lambda([this]() {
+                                return FText::FromString(SelectedMesh.IsValid() ? SelectedMesh->GetName() : TEXT("None"));
+                                    })
+                                .ColorAndOpacity_Lambda([this]() {
+                                return SelectedMesh.IsValid() ? FSlateColor::UseForeground() : FSlateColor(FLinearColor::Red);
+                                    })
+                        ]
+
+                    // Column 2: Control Rig
+                    + SGridPanel::Slot(2, 0).Padding(4, 0, 0, 0)
+                        [
+                            SNew(SButton)
+                                .OnClicked(this, &SEditingSessionWindow::OnSelectRig)
+                                [
+                                    AddIconAndTextHere(TEXT("controlRigWhite"), TEXT("Rig"))
+                                ]
+                        ]
+                    + SGridPanel::Slot(2, 1).Padding(4, 0, 0, 0)
+                        [
+                            SNew(STextBlock)
+                                .Text_Lambda([this]() {
+                                if (SelectedRig.IsNull())
+                                    return FText::FromString(TEXT("None"));
+                                return FText::FromString(
+                                    SelectedRig.IsValid()
+                                    ? SelectedRig->GetName()
+                                    : SelectedRig.ToSoftObjectPath().GetAssetName());
+                                    })
+                                .ColorAndOpacity_Lambda([this]() {
+                                return SelectedRig.IsNull() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                                    })
+                        ]
+
+                    // Column 3: Output folder
+                    + SGridPanel::Slot(3, 0).Padding(4, 0, 0, 0)
+                        [
+                            SNew(SButton)
+                                .OnClicked(this, &SEditingSessionWindow::OnSelectOutputFolder)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Output"), false, true)
+                                ]
+                        ]
+                    + SGridPanel::Slot(3, 1).Padding(4, 0, 0, 0)
+                        [
+                            SNew(STextBlock)
+                                .Text_Lambda([this]() { return FText::FromString(FOutputHelper::Get()); })
+                                .ColorAndOpacity_Lambda([this]() {
+                                return FOutputHelper::Get().IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                                    })
+                        ]
+                    ]
         ];
 }
 
-TSharedRef<SWidget> SEditingSessionWindow::BuildStatusRow()
+TSharedRef<SWidget> SEditingSessionWindow::BuildQueueControlsSection()
 {
-    return SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+    return SNew(SBorder)
+        .Padding(FMargin(8, 6))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
         [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Mesh:")))
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 16, 0)
-        [
-            SNew(STextBlock)
-                .Text_Lambda([this]() {
-                return FText::FromString(SelectedMesh.IsValid() ? SelectedMesh->GetName() : TEXT("None"));
-                    })
-                .ColorAndOpacity_Lambda([this]() {
-                return SelectedMesh.IsValid() ? FSlateColor::UseForeground() : FSlateColor(FLinearColor::Red);
-                    })
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
-        [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Rig:")))
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 16, 0)
-        [
-            SNew(STextBlock)
-                .Text_Lambda([this]() {
-                if (SelectedRig.IsNull())
-                    return FText::FromString(TEXT("None"));
-                return FText::FromString(
-                    SelectedRig.IsValid()
-                    ? SelectedRig->GetName()
-                    : SelectedRig.ToSoftObjectPath().GetAssetName());
-                    })
-                .ColorAndOpacity_Lambda([this]() {
-                return SelectedRig.IsNull() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
-                    })
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
-        [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Output Folder:")))
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-        [
-            SNew(STextBlock)
-                .Text_Lambda([this]() { return FText::FromString(FOutputHelper::Get()); })
-                .ColorAndOpacity_Lambda([this]() {
-                return FOutputHelper::Get().IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
-                    })
+            SNew(SVerticalBox)
+                + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 6)
+                [
+                    SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Queue Management")))
+                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+                ]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
+                [
+                    BuildQueueAdditionControlsRow()
+                ]
+                + SVerticalBox::Slot().AutoHeight()
+                [
+                    BuildQueueRemovalControlsRow()
+                ]
         ];
 }
 
 TSharedRef<SWidget> SEditingSessionWindow::BuildQueueAdditionControlsRow()
 {
     return SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
         [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Queue animations from: ")))
+            SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Add:")))
+                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
         ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
         [
             SNew(SButton)
-                .Text(FText::FromString(TEXT("folder")))
                 .OnClicked_Lambda([]{ FQueueControls::AddAnimationsFromFolder(); return FReply::Handled(); })
+                [
+                    AddIconAndTextHere(TEXT("Icons.Plus"), TEXT("folder"), false, true, FStyleColors::AccentGreen.GetSpecifiedColor())
+                ]
         ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
+        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
         [
             SNew(SButton)
-                .Text(FText::FromString(TEXT("anim sequence(s)")))
-                .OnClicked_Lambda([]{ FQueueControls::AddAnimationsByHand(); return FReply::Handled(); })
+                .OnClicked_Lambda([] { FQueueControls::AddAnimationsByHand(); return FReply::Handled(); })
+                [
+                    AddIconAndTextHere(TEXT("Icons.Plus"), TEXT("anim sequence(s)"), false, true, FStyleColors::AccentGreen.GetSpecifiedColor())
+                ]
         ];
 }
 
 TSharedRef<SWidget> SEditingSessionWindow::BuildQueueRemovalControlsRow()
 {
     return SNew(SHorizontalBox)
-    +SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
-        [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Remove queued animations: ")))
-        ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
-        [
-            SNew(SButton)
-                .Text(FText::FromString(TEXT("all animations")))
-                .OnClicked_Lambda([] { FQueueControls::RemoveAllAnimations(); return FReply::Handled(); })
-        ]
-        + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 8, 0)
-        [
-            SNew(SButton)
-                .Text(FText::FromString(TEXT("marked processed")))
-                .OnClicked_Lambda([] { FQueueControls::RemoveMarkedProcessedAnimations(); return FReply::Handled(); })
-        ];
+            + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+            [
+                //AddIconAndTextHere(TEXT("minusWhite"), TEXT("Remove:"))
+                SNew(STextBlock)
+                    .Text(FText::FromString(TEXT("Rem:")))
+                    .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+            ]
+            + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
+            [
+                SNew(SButton)
+                    .OnClicked_Lambda([] { FQueueControls::RemoveAllAnimations(); return FReply::Handled(); })
+                    [
+                        AddIconAndTextHere(TEXT("Icons.Minus"), TEXT("all"), false, true, FStyleColors::AccentRed.GetSpecifiedColor())
+                    ]
+            ]
+            + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
+            [
+                SNew(SButton)
+                    .OnClicked_Lambda([] { FQueueControls::RemoveMarkedProcessedAnimations(); return FReply::Handled(); })
+                    [
+                        AddIconAndTextHere(TEXT("Icons.Minus"), TEXT("processed"), false, true, FStyleColors::AccentRed.GetSpecifiedColor())
+                    ]
+            ];
 }
 
 TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
 {
-    return SNew(SHorizontalBox)
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
+    return SNew(SBorder)
+        .Padding(FMargin(8, 6))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
         [
-            SNew(STextBlock).Text(FText::FromString(TEXT("Session Controls:")))
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
-        [
-            SNew(SButton)
-            .Text(FText::FromString(TEXT("Bake & Save Animation")))
-            .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
-        ]
-        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 8, 0)
-        [
-        SNew(SButton)
-        .Text(FText::FromString(TEXT("Load Next Animation")))
-        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+            SNew(SVerticalBox)
+
+                // Title row
+                + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 4)
+                [
+                    SNew(STextBlock)
+                        .Text(FText::FromString(TEXT("Session Actions")))
+                        .Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+                ]
+                + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
+                // Buttons row
+                + SVerticalBox::Slot().AutoHeight()
+                [
+                    SNew(SHorizontalBox)
+                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                        [
+                            SNew(SButton)
+                                //.Text(FText::FromString(TEXT("Bake & Save")))
+                                .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Bake & Save"), false, true)
+                                ]
+                        ]
+                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                        [
+                            SNew(SButton)
+                                //.Text(FText::FromString(TEXT("Next Animation")))
+                                .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Animation"), false, true)
+                                ]
+                        ]
+                ]
         ];
 }
 

@@ -16,6 +16,7 @@ public class ToucanSessionSequencer : ModuleRules
             "ControlRigEditor",
             "Sequencer",
             "LevelSequenceEditor",
+            "EditorStyle",
         });
 
         PrivateDependencyModuleNames.AddRange(new[] {
