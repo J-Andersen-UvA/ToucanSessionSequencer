@@ -23,11 +23,13 @@ public:
 
 private:
     TSharedRef<SWidget> BuildSelectionAndStatusGrid();
+    TSharedRef<SWidget> BuildQueueControlsSection();
     TSharedRef<SWidget> BuildQueueAdditionControlsRow();
     TSharedRef<SWidget> BuildQueueRemovalControlsRow();
     TSharedRef<SWidget> BuildSessionControlsRow();
     TSharedRef<SWidget> BuildQueueList();
     TSharedRef<SWidget> AddIconHere(const FString& IconName, const FVector2D& Size = FVector2D(16.f, 16.f));
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, const bool bBold);
     TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text);
 
 private:
