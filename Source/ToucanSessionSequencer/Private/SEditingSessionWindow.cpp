@@ -5,6 +5,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/SBoxPanel.h"
+#include "Styling/StyleColors.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
 #include "Misc/ConfigCacheIni.h"
@@ -25,6 +26,85 @@ TSharedRef<SWidget> SEditingSessionWindow::AddIconHere(const FString& IconName, 
     return SNew(SImage)
         .Image(new FSlateVectorImageBrush(IconPath, IconSize, FLinearColor::White))
         .ColorAndOpacity(FLinearColor::White);
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(
+    const FString& IconName,
+    const FString& Text,
+    bool bBold /*= false*/,
+    bool bUseAppStyleIcon /*= false*/,
+    const FLinearColor& IconColor /*= FLinearColor(0,0,0,0)*/
+)
+{
+    const FVector2D IconSize(16.f, 16.f);
+    const FSlateBrush* IconBrush = nullptr;
+
+    if (bUseAppStyleIcon)
+    {
+        IconBrush = FAppStyle::GetBrush(*IconName);
+    }
+    else
+    {
+        IconBrush = new FSlateVectorImageBrush(
+            IPluginManager::Get().FindPlugin(TEXT("ToucanSessionSequencer"))->GetBaseDir()
+            / TEXT("Resources/Icons") / (IconName + TEXT(".svg")),
+            IconSize,
+            IconColor
+        );
+    }
+
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+        [
+            SNew(SImage)
+                .Image(IconBrush)
+                .ColorAndOpacity(
+                    (IconColor.R == 0.f && IconColor.G == 0.f && IconColor.B == 0.f && IconColor.A == 0.f)
+                    ? FSlateColor::UseForeground()
+                    : FSlateColor(IconColor)
+                )
+                .DesiredSizeOverride(IconSize)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+                .Text(FText::FromString(Text))
+                .Font(FCoreStyle::GetDefaultFontStyle(bBold ? "Bold" : "Regular", 10))
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon)
+{
+    const FVector2D IconSize(16.f, 16.f);
+    const FSlateBrush* IconBrush = nullptr;
+
+    if (bUseAppStyleIcon)
+    {
+        IconBrush = FAppStyle::GetBrush(*IconName);
+    }
+    else
+    {
+        IconBrush = new FSlateVectorImageBrush(
+            IPluginManager::Get().FindPlugin(TEXT("ToucanSessionSequencer"))->GetBaseDir()
+            / TEXT("Resources/Icons") / (IconName + TEXT(".svg")),
+            IconSize,
+            FLinearColor::White);
+    }
+
+    return SNew(SHorizontalBox)
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+        [
+            SNew(SImage)
+                .Image(IconBrush)
+                .ColorAndOpacity(FLinearColor::White)
+                .DesiredSizeOverride(IconSize)
+        ]
+        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+        [
+            SNew(STextBlock)
+                .Text(FText::FromString(Text))
+                .Font(FCoreStyle::GetDefaultFontStyle(bBold ? "Bold" : "Regular", 10))
+        ];
 }
 
 TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(const FString& IconName, const FString& Text, const bool bBold)
@@ -116,7 +196,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                             SNew(SButton)
                                 .OnClicked(this, &SEditingSessionWindow::OnSelectSkeletalMesh)
                                 [
-                                    AddIconAndTextHere(TEXT("boneWhite"), TEXT("Skeletal Mesh"))
+                                    AddIconAndTextHere(TEXT("ClassIcon.SkeletalMesh"), TEXT("Skeletal Mesh"), false, true)
                                 ]
                         ]
                     + SGridPanel::Slot(1, 1)
@@ -161,7 +241,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                             SNew(SButton)
                                 .OnClicked(this, &SEditingSessionWindow::OnSelectOutputFolder)
                                 [
-                                    AddIconAndTextHere(TEXT("folderWhite"), TEXT("Output"))
+                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Output"), false, true)
                                 ]
                         ]
                     + SGridPanel::Slot(3, 1).Padding(4, 0, 0, 0)
@@ -206,7 +286,6 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildQueueAdditionControlsRow()
     return SNew(SHorizontalBox)
         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
         [
-            //AddIconAndTextHere(TEXT("plusWhite"), TEXT("Add from:"))
             SNew(STextBlock)
                 .Text(FText::FromString(TEXT("Add:")))
                 .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
@@ -214,14 +293,18 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildQueueAdditionControlsRow()
         + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
         [
             SNew(SButton)
-                .Text(FText::FromString(TEXT("folder")))
                 .OnClicked_Lambda([]{ FQueueControls::AddAnimationsFromFolder(); return FReply::Handled(); })
+                [
+                    AddIconAndTextHere(TEXT("Icons.Plus"), TEXT("folder"), false, true, FStyleColors::AccentGreen.GetSpecifiedColor())
+                ]
         ]
         + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
         [
             SNew(SButton)
-                .Text(FText::FromString(TEXT("anim sequence(s)")))
                 .OnClicked_Lambda([] { FQueueControls::AddAnimationsByHand(); return FReply::Handled(); })
+                [
+                    AddIconAndTextHere(TEXT("Icons.Plus"), TEXT("anim sequence(s)"), false, true, FStyleColors::AccentGreen.GetSpecifiedColor())
+                ]
         ];
 }
 
@@ -232,20 +315,24 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildQueueRemovalControlsRow()
             [
                 //AddIconAndTextHere(TEXT("minusWhite"), TEXT("Remove:"))
                 SNew(STextBlock)
-                    .Text(FText::FromString(TEXT("Remove:")))
+                    .Text(FText::FromString(TEXT("Rem:")))
                     .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
             ]
             + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
             [
                 SNew(SButton)
-                    .Text(FText::FromString(TEXT("all")))
                     .OnClicked_Lambda([] { FQueueControls::RemoveAllAnimations(); return FReply::Handled(); })
+                    [
+                        AddIconAndTextHere(TEXT("Icons.Minus"), TEXT("all"), false, true, FStyleColors::AccentRed.GetSpecifiedColor())
+                    ]
             ]
             + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
             [
                 SNew(SButton)
-                    .Text(FText::FromString(TEXT("processed")))
                     .OnClicked_Lambda([] { FQueueControls::RemoveMarkedProcessedAnimations(); return FReply::Handled(); })
+                    [
+                        AddIconAndTextHere(TEXT("Icons.Minus"), TEXT("processed"), false, true, FStyleColors::AccentRed.GetSpecifiedColor())
+                    ]
             ];
 }
 
@@ -272,14 +359,20 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                         [
                             SNew(SButton)
-                                .Text(FText::FromString(TEXT("Bake & Save")))
+                                //.Text(FText::FromString(TEXT("Bake & Save")))
                                 .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Bake & Save"), false, true)
+                                ]
                         ]
                         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                         [
                             SNew(SButton)
-                                .Text(FText::FromString(TEXT("Next Animation")))
+                                //.Text(FText::FromString(TEXT("Next Animation")))
                                 .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Animation"), false, true)
+                                ]
                         ]
                 ]
         ];

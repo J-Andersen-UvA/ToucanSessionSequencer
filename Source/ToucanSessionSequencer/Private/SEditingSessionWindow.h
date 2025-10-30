@@ -29,6 +29,8 @@ private:
     TSharedRef<SWidget> BuildSessionControlsRow();
     TSharedRef<SWidget> BuildQueueList();
     TSharedRef<SWidget> AddIconHere(const FString& IconName, const FVector2D& Size = FVector2D(16.f, 16.f));
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon, const FLinearColor& IconColor);
+    TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon);
     TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, const bool bBold);
     TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text);
 
