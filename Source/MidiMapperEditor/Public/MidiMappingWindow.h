@@ -46,4 +46,6 @@ private:
     FReply OnLearnClicked(TSharedPtr<FControlRow> Row);
     FReply OnUnbindClicked(TSharedPtr<FControlRow> Row);
     void OnLearnedControl(FString DeviceName, int32 ControlId, TSharedPtr<FControlRow> Row);
+
+    FReply OnForgetAllClicked();
 };

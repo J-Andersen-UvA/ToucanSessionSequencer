@@ -59,6 +59,15 @@ public:
         return Mappings.Find(DeviceName);
     }
 
+    void ClearMappings(const FString& InDeviceName)
+    {
+        if (FMidiDeviceMapping* Dev = Mappings.Find(InDeviceName))
+        {
+            Dev->ControlMappings.Empty();
+            SaveMappings(InDeviceName, Dev->RigName, Dev->ControlMappings);
+        }
+    }
+
 private:
     //FString DeviceName;
     //FString RigName;

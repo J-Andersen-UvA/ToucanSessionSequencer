@@ -191,7 +191,22 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
                             ]
                     ]
             ]
-
+        + SVerticalBox::Slot().AutoHeight().Padding(5)
+        [
+            SNew(SHorizontalBox)
+                + SHorizontalBox::Slot().AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString("Forget All"))
+                        .OnClicked_Lambda([this]()
+                            {
+                                return OnForgetAllClicked();
+                            })
+                        .HAlign(HAlign_Center)
+                        .VAlign(VAlign_Center)
+                        .ContentPadding(FMargin(10.f, 4.f))
+                ]
+        ]
         + SVerticalBox::Slot().FillHeight(1.0f).Padding(5)
             [
                 SAssignNew(MappingListView, SListView<TSharedPtr<FControlRow>>)
@@ -483,4 +498,27 @@ TSharedRef<ITableRow> SMidiMappingWindow::GenerateMappingRow(
     return SNew(SMidiMappingRow, OwnerTable)
         .RowItem(InItem)
         .OwnerWindow(SharedThis(this));
+}
+
+FReply SMidiMappingWindow::OnForgetAllClicked()
+{
+    const FText Title = FText::FromString(TEXT("Confirm Forget All"));
+    const FText Message = FText::FromString(TEXT("Are you sure you want to remove all MIDI mappings for this device? This action cannot be undone."));
+
+    EAppReturnType::Type Result = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
+    if (Result != EAppReturnType::Yes)
+        return FReply::Handled(); // cancel if not confirmed
+
+    if (auto* Router = FMidiMapperModule::GetRouter())
+        Router->CancelLearning();
+
+    if (UMidiMappingManager* M = UMidiMappingManager::Get())
+        M->ClearMappings(ActiveDeviceName);
+
+    for (auto& Row : Rows)
+        Row->BoundControlId = -1;
+
+    RefreshList();
+    UE_LOG(LogTemp, Warning, TEXT("All mappings for device '%s' cleared."), *ActiveDeviceName);
+    return FReply::Handled();
 }
