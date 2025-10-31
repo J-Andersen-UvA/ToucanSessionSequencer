@@ -178,22 +178,15 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                 + SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 6)
                 [
                     SNew(STextBlock)
-                        .Text(FText::FromString(TEXT("Selection")))
+                        .Text(FText::FromString(TEXT("Configuration")))
                         .Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
                 ]
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)[SNew(SSeparator).Thickness(4.0f)]
                 + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
                 [
                     SNew(SGridPanel)
-                        // Column 0: Labels ("Pick:", "Mesh:")
-                        + SGridPanel::Slot(0, 0).Padding(0, 0, 4, 0).VAlign(VAlign_Center)
-                        [
-                            SNew(STextBlock)
-                                .Text(FText::FromString(TEXT("Select:")))
-                                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
-                        ]
-                        // Column 1: Skeletal Mesh
-                        + SGridPanel::Slot(1, 0)
+                        // Row 0: skeletalmesh
+                        + SGridPanel::Slot(0, 0).Padding(0, 0, 4, 2).VAlign(VAlign_Center)
                         [
                             SNew(SButton)
                                 .OnClicked(this, &SEditingSessionWindow::OnSelectSkeletalMesh)
@@ -201,7 +194,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                     AddIconAndTextHere(TEXT("ClassIcon.SkeletalMesh"), TEXT("Skeletal Mesh"), false, true)
                                 ]
                         ]
-                    + SGridPanel::Slot(1, 1)
+                    + SGridPanel::Slot(1, 0).VAlign(VAlign_Center)
                         [
                             SNew(STextBlock)
                                 .Text_Lambda([this]() {
@@ -212,8 +205,8 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                     })
                         ]
 
-                    // Column 2: Control Rig
-                    + SGridPanel::Slot(2, 0).Padding(4, 0, 0, 0)
+                    // Row 1: Control Rig
+                    + SGridPanel::Slot(0, 1).Padding(0, 2, 4, 2)
                         [
                             SNew(SButton)
                                 .OnClicked(this, &SEditingSessionWindow::OnSelectRig)
@@ -221,7 +214,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                     AddIconAndTextHere(TEXT("controlRigWhite"), TEXT("Rig"))
                                 ]
                         ]
-                    + SGridPanel::Slot(2, 1).Padding(4, 0, 0, 0)
+                    + SGridPanel::Slot(1, 1).VAlign(VAlign_Center)
                         [
                             SNew(STextBlock)
                                 .Text_Lambda([this]() {
@@ -237,8 +230,8 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                     })
                         ]
 
-                    // Column 3: Output folder
-                    + SGridPanel::Slot(3, 0).Padding(4, 0, 0, 0)
+                    // Row 2 — Output Folder
+                    + SGridPanel::Slot(0, 2).Padding(0, 2, 4, 0)
                         [
                             SNew(SButton)
                                 .OnClicked(this, &SEditingSessionWindow::OnSelectOutputFolder)
@@ -246,7 +239,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                     AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Output"), false, true)
                                 ]
                         ]
-                    + SGridPanel::Slot(3, 1).Padding(4, 0, 0, 0)
+                    + SGridPanel::Slot(1, 2).VAlign(VAlign_Center)
                         [
                             SNew(STextBlock)
                                 .Text_Lambda([this]() { return FText::FromString(FOutputHelper::Get()); })
