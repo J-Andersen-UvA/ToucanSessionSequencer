@@ -90,8 +90,62 @@ public:
                     });
             };
 
-        if (GEngine) BindDeviceDelegates();
-        else FCoreDelegates::OnPostEngineInit.AddLambda(BindDeviceDelegates);
+        if (GEngine) {
+            BindDeviceDelegates();
+            FCoreDelegates::OnFEngineLoopInitComplete.AddLambda([] {
+                if (UMidiMappingManager* M = UMidiMappingManager::Get())
+                {
+                    FString Rig;
+                    GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), Rig, GEditorPerProjectIni);
+                    if (Rig.IsEmpty())
+                    {
+                        Rig = TEXT("DefaultRig");
+                    }
+                    else
+                    {
+                        // Strip asset path or duplicate suffix if any
+                        FString ObjectPath, ObjectName;
+                        if (Rig.Split(TEXT("."), &ObjectPath, &ObjectName))
+                        {
+                            Rig = ObjectName;
+                        }
+                        else
+                        {
+                            Rig = FPaths::GetCleanFilename(Rig);
+                        }
+                    }
+                    if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
+                    {
+                        TArray<FUnrealMidiDeviceInfo> Devices;
+                        Midi->EnumerateDevices(Devices);
+                        if (auto* Router = FMidiMapperModule::GetRouter())
+                        {
+                            Router->Init(M); // ensures router knows the mapping manager
+                            UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Router initialized with mapping manager"));
+                            Router->TryBind(); // ensure delegate actually bound now
+                            UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Forced router bind after engine loop complete"));
+                        }
+
+                        for (const auto& D : Devices)
+                        {
+                            if (D.bIsInput)
+                            {
+                                M->Initialize(D.Name, FPaths::GetCleanFilename(Rig));
+                                UE_LOG(LogTemp, Warning, TEXT("[MidiMapperEditor] After init: %d mappings loaded for %s_%s"),
+                                    M->GetAll().Num(), *D.Name, *Rig);
+                                UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Late-init mapping for %s"), *D.Name);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        else {
+            FCoreDelegates::OnPostEngineInit.AddLambda([] {
+                FMidiMapperEditorModule& Mod = FModuleManager::LoadModuleChecked<FMidiMapperEditorModule>("MidiMapperEditor");
+                Mod.StartupModule(); // re-run initialization now that engine exists
+            });
+        }
     }
 
     virtual void ShutdownModule() override

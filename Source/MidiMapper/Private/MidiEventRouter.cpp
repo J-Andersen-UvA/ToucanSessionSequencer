@@ -22,6 +22,7 @@ void UMidiEventRouter::TryBind()
         if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
         {
             Midi->OnMidiValue.AddDynamic(this, &UMidiEventRouter::OnMidiValueReceived);
+            UE_LOG(LogTemp, Warning, TEXT("MidiEventRouter: bound to UnrealMidiSubsystem"));
             return;
         }
     }

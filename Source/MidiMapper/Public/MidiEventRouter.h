@@ -33,11 +33,12 @@ public:
         MidiActionDelegate.Broadcast(ActionName, Value);
     }
 
+    void TryBind();              // attempt immediate bind
+
 private:
     UPROPERTY()
     UMidiMappingManager* Manager;
 
-    void TryBind();              // attempt immediate bind
     void BindAfterEngineInit();  // deferred bind
 
     bool bLearning = false;

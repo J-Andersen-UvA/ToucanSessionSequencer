@@ -47,6 +47,9 @@ public:
 
     UFUNCTION()
     void DeactivateDevice(const FString& InDeviceName);
+
+    FString GetMappingFilePath() const;
+    FString GetMappingFilePath(const FString& InDeviceName, const FString& InRigName) const;
 private:
     FString DeviceName;
     FString RigName;
@@ -58,6 +61,4 @@ private:
     UPROPERTY()
     TMap<FString, FMidiDeviceMapping> Mappings;
 
-    FString GetMappingFilePath() const;
-    FString GetMappingFilePath(const FString& InDeviceName, const FString& InRigName) const;
 };

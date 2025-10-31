@@ -212,6 +212,7 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
         M->Initialize(ActiveDeviceName, ActiveRigName);
         RefreshBindings();
         RefreshList();
+        UE_LOG(LogTemp, Warning, TEXT("Mapping file path: %s"), *M->GetMappingFilePath());
     }
 }
 
