@@ -8,6 +8,9 @@
 #include "MidiEventRouter.h"
 #include "UnrealMidiSubsystem.h"
 #include "MidiMappingWindow.h"
+#include "Styling/SlateStyle.h"
+#include "Styling/SlateStyleRegistry.h"
+#include "Interfaces/IPluginManager.h"
 
 static const FName MidiMappingTabName(TEXT("ToucanMidiMapping"));
 
@@ -16,11 +19,29 @@ class FMidiMapperEditorModule : public IModuleInterface
 public:
     virtual void StartupModule() override
     {
+        // Styling tab
+        const FName StyleName("MidiMapperEditorStyle");
+        if (!FSlateStyleRegistry::FindSlateStyle(StyleName))
+        {
+            FSlateStyleSet* MidiStyle = new FSlateStyleSet(StyleName);
+            MidiStyle->SetContentRoot(IPluginManager::Get().FindPlugin("ToucanSessionSequencer")->GetBaseDir() / TEXT("Resources"));
+            MidiStyle->Set(
+                "MidiMapperEditor.TabIcon",
+                new FSlateVectorImageBrush(
+                    MidiStyle->RootToContentDir(TEXT("Icons/toucanWhite"), TEXT(".svg")),
+                    FVector2D(16.0f, 16.0f),
+                    FLinearColor::White
+                )
+            );
+            FSlateStyleRegistry::RegisterSlateStyle(*MidiStyle);
+        }
+
         // Register tab
         FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
             MidiMappingTabName,
             FOnSpawnTab::CreateRaw(this, &FMidiMapperEditorModule::SpawnMidiMappingTab))
             .SetDisplayName(FText::FromString(TEXT("MIDI Mapping")))
+            .SetIcon(FSlateIcon("MidiMapperEditorStyle", "MidiMapperEditor.TabIcon"))
             .SetMenuType(ETabSpawnerMenuType::Hidden);
 
         // Add to Toucan menu
