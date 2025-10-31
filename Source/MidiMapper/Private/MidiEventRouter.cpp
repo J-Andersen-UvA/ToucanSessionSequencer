@@ -18,22 +18,38 @@ void UMidiEventRouter::TryBind()
 {
     if (GEngine)
     {
-        UE_LOG(LogTemp, Warning, TEXT("MidiEventRouter: attempting immediate bind"));
         if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
         {
+            Midi->OnMidiValue.RemoveDynamic(this, &UMidiEventRouter::OnMidiValueReceived);
             Midi->OnMidiValue.AddDynamic(this, &UMidiEventRouter::OnMidiValueReceived);
+            UE_LOG(LogTemp, Warning, TEXT("MidiEventRouter: bound to UnrealMidiSubsystem"));
             return;
         }
     }
 
     FCoreDelegates::OnFEngineLoopInitComplete.AddUObject(this, &UMidiEventRouter::BindAfterEngineInit);
-    UE_LOG(LogTemp, Verbose, TEXT("MidiEventRouter: deferring bind until engine init"));
 }
 
 void UMidiEventRouter::BindAfterEngineInit()
 {
     FCoreDelegates::OnFEngineLoopInitComplete.RemoveAll(this);
     TryBind();
+}
+
+void UMidiEventRouter::ArmLearnOnce(const FString& InDeviceName)
+{
+    bLearning = true;
+    ActiveLearningDevice = InDeviceName;
+}
+
+void UMidiEventRouter::CancelLearning()
+{
+    bLearning = false;
+    bSuppressNext = false;
+    ActiveLearningDevice.Empty();
+    LastLearnedControl = -1;
+    OnLearningCancelled.Broadcast();
+    UE_LOG(LogTemp, Log, TEXT("MIDI learning cancelled."));
 }
 
 void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
@@ -58,8 +74,49 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
         return;
     }
 
+    FString DeviceName;
+    if (!UUnrealMidiSubsystem::ParseDeviceFromId(Value.Id, DeviceName))
+        return;
+
+    // --- learning path ---
+    if (bLearning)
+    {
+        if (!DeviceName.Equals(ActiveLearningDevice, ESearchCase::IgnoreCase))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Ignoring learn input from %s, waiting for %s"), *DeviceName, *ActiveLearningDevice);
+            return; // wrong device
+        }
+
+        bLearning = false;
+        LastLearnedControl = ControlID;
+        OnLearn.Broadcast(DeviceName, ControlID);
+        bSuppressNext = true;     // prevent the immediate next event from firing
+        return;
+    }
+
+    // --- suppression path ---
+    if (bSuppressNext)
+    {
+        if (ControlID == LastLearnedControl)
+        {
+            bSuppressNext = false;
+            return; // skip one duplicate event
+        }
+        bSuppressNext = false;
+    }
+
+    int32 DotPos;
+    if (DeviceName.FindChar('.', DotPos))
+    {
+        FString Left = DeviceName.Left(DotPos);
+        FString Right = DeviceName.Mid(DotPos + 1);
+        if (Left.Equals(Right, ESearchCase::IgnoreCase))
+            DeviceName = Left;
+    }
+
+    // --- normal mapped execution ---
     FMidiMappedAction Action;
-    if (Manager->GetMapping(ControlID, Action))
+    if (Manager->GetMapping(DeviceName, ControlID, Action))
     {
         UE_LOG(LogTemp, Warning, TEXT("MIDI control %d (%s) from %s triggered %s (%s:%s) value=%.3f"),
             ControlID,

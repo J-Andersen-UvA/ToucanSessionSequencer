@@ -18,6 +18,14 @@ struct FMidiMappedAction
     FName Modus;
 };
 
+USTRUCT(BlueprintType)
+struct FMidiDeviceMapping
+{
+    GENERATED_BODY()
+    FString RigName;
+    TMap<int32, FMidiMappedAction> ControlMappings;
+};
+
 UCLASS()
 class MIDIMAPPER_API UMidiMappingManager : public UObject
 {
@@ -27,18 +35,48 @@ public:
     static UMidiMappingManager* Get();
 
     void Initialize(const FString& InDeviceName, const FString& InRigName);
-    void RegisterMapping(int32 ControlID, const FMidiMappedAction& Action);
-    bool GetMapping(int32 ControlID, FMidiMappedAction& OutAction) const;
+
+    void RegisterMapping(const FString& DeviceName, int32 ControlID, const FMidiMappedAction& Action);
+    bool GetMapping(const FString& DeviceName, int32 ControlID, FMidiMappedAction& OutAction) const;
+
+    void RegisterOrUpdate(const FString& DeviceName, int32 ControlID, const FMidiMappedAction& Action);
+    bool RemoveMapping(const FString& DeviceName, int32 ControlID);
+
     void SaveMappings();
-    void LoadMappings();
+    void SaveMappings(const FString& InDeviceName, const FString& InRigName,
+        const TMap<int32, FMidiMappedAction>& InMappings);
+
+    void LoadMappings(const FString& InDeviceName, const FString& InRigName);
+    //const TMap<int32, FMidiMappedAction>& GetAll() const { return ControlMappings; }
+
+    UFUNCTION()
+    void DeactivateDevice(const FString& InDeviceName);
+
+    FString GetMappingFilePath(const FString& InDeviceName, const FString& InRigName) const;
+
+    const FMidiDeviceMapping* GetDeviceMapping(const FString& DeviceName) const
+    {
+        return Mappings.Find(DeviceName);
+    }
+
+    void ClearMappings(const FString& InDeviceName)
+    {
+        if (FMidiDeviceMapping* Dev = Mappings.Find(InDeviceName))
+        {
+            Dev->ControlMappings.Empty();
+            SaveMappings(InDeviceName, Dev->RigName, Dev->ControlMappings);
+        }
+    }
 
 private:
-    FString DeviceName;
-    FString RigName;
+    //FString DeviceName;
+    //FString RigName;
     FString MappingFilePath;
 
-    UPROPERTY()
-    TMap<int32, FMidiMappedAction> ControlMappings;
+    //UPROPERTY()
+    //TMap<int32, FMidiMappedAction> ControlMappings;
 
-    FString GetMappingFilePath() const;
+    UPROPERTY()
+    TMap<FString, FMidiDeviceMapping> Mappings;
+
 };

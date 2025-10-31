@@ -15,6 +15,10 @@
             "Name": "MidiMapper",
             "Type": "Editor",
             "LoadingPhase": "Default"
+        },
+        {
+            "Name": "MidiMapperEditor",
+            "Type": "Editor"
         }
     ],
     "EnabledByDefault": true

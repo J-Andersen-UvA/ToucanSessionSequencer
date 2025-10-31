@@ -16,6 +16,8 @@
 #include "Misc/MessageDialog.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "QueueControls.h"
+#include "Misc/CoreDelegates.h"
+#include "EditingSessionDelegates.h"
 
 TSharedRef<SWidget> SEditingSessionWindow::AddIconHere(const FString& IconName, const FVector2D& Size)
 {
@@ -615,6 +617,11 @@ FReply SEditingSessionWindow::OnSelectRig()
                 {
                     SelectedRig = Selected[0].GetAsset(); // store the blueprint asset
                     SaveSettings();
+
+                    FString RigName = FPaths::GetCleanFilename(SelectedRig->GetName());
+                    GOnRigChanged.Broadcast(RigName);
+
+                    UE_LOG(LogTemp, Log, TEXT("Rig changed: %s"), *RigName);
                 }
             }),
         FOnAssetDialogCancelled::CreateLambda([] {})
