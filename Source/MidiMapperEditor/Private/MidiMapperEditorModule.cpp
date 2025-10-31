@@ -16,37 +16,33 @@ class FMidiMapperEditorModule : public IModuleInterface
 public:
     virtual void StartupModule() override
     {
-        // Register the tab spawner
-        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(MidiMappingTabName,
+        // Register tab
+        FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+            MidiMappingTabName,
             FOnSpawnTab::CreateRaw(this, &FMidiMapperEditorModule::SpawnMidiMappingTab))
             .SetDisplayName(FText::FromString(TEXT("MIDI Mapping")))
             .SetMenuType(ETabSpawnerMenuType::Hidden);
 
-        // Add to the same "Toucan sequencer" menu
-        UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
-            this, &FMidiMapperEditorModule::RegisterMenus));
+        // Add to Toucan menu
+        UToolMenus::RegisterStartupCallback(
+            FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FMidiMapperEditorModule::RegisterMenus));
 
+        // Route incoming MIDI actions
         if (auto* Router = FMidiMapperModule::GetRouter())
         {
             Router->OnMidiAction().AddLambda([](FName ActionName, const FMidiControlValue& Value)
                 {
                     if (UMidiActionExecutor* Exec = GEditor->GetEditorSubsystem<UMidiActionExecutor>())
-                    {
                         Exec->ExecuteMappedAction(ActionName, Value);
-                    }
                 });
         }
-
-        InitializeMappingsFromConfig();
 
         auto BindDeviceDelegates = []()
             {
                 if (!GEngine) return;
-
                 if (UUnrealMidiSubsystem* MidiSys = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
                 {
-                    static FDelegateHandle ConnH;
-                    static FDelegateHandle DiscH;
+                    static FDelegateHandle ConnH, DiscH;
 
                     if (!ConnH.IsValid())
                     {
@@ -57,12 +53,16 @@ public:
                                     FString Rig;
                                     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), Rig, GEditorPerProjectIni);
                                     if (Rig.IsEmpty()) Rig = TEXT("DefaultRig");
-                                    M->Initialize(Device, FPaths::GetCleanFilename(Rig));
-                                    if (auto* Window = SMidiMappingWindow::GetActiveInstance())
+                                    else
                                     {
-                                        Window->RefreshList();
+                                        FString ObjPath, ObjName;
+                                        Rig.Split(TEXT("."), &ObjPath, &ObjName);
+                                        Rig = ObjName.IsEmpty() ? FPaths::GetCleanFilename(Rig) : ObjName;
                                     }
-                                    UE_LOG(LogTemp, Log, TEXT("Hot-loaded mapping for device '%s'"), *Device);
+                                    M->Initialize(Device, Rig);
+                                    if (auto* Window = SMidiMappingWindow::GetActiveInstance())
+                                        Window->RefreshList();
+                                    UE_LOG(LogTemp, Log, TEXT("Hot-loaded mapping for '%s'"), *Device);
                                 }
                             });
                     }
@@ -72,79 +72,58 @@ public:
                         DiscH = MidiSys->OnDeviceDisconnected.AddLambda([](const FString& Device)
                             {
                                 if (UMidiMappingManager* M = UMidiMappingManager::Get())
-                                {
                                     M->DeactivateDevice(Device);
-                                    UE_LOG(LogTemp, Log, TEXT("Device disconnected: %s"), *Device);
-                                }
+                                UE_LOG(LogTemp, Log, TEXT("Device disconnected: %s"), *Device);
                             });
                     }
                 }
-
-                FSlateApplication::Get().GetRenderer()->OnSlateWindowRendered().AddLambda([](SWindow&, void*)
-                    {
-                        if (SMidiMappingWindow* W = SMidiMappingWindow::GetActiveInstance())
-                        {
-                            W->RefreshBindings();
-                            W->RefreshList();
-                        }
-                    });
             };
 
-        if (GEngine) {
+        if (GEngine)
+        {
             BindDeviceDelegates();
-            FCoreDelegates::OnFEngineLoopInitComplete.AddLambda([] {
-                if (UMidiMappingManager* M = UMidiMappingManager::Get())
+
+            FCoreDelegates::OnFEngineLoopInitComplete.AddLambda([]()
                 {
                     FString Rig;
                     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), Rig, GEditorPerProjectIni);
-                    if (Rig.IsEmpty())
-                    {
-                        Rig = TEXT("DefaultRig");
-                    }
+                    if (Rig.IsEmpty()) Rig = TEXT("DefaultRig");
                     else
                     {
-                        // Strip asset path or duplicate suffix if any
-                        FString ObjectPath, ObjectName;
-                        if (Rig.Split(TEXT("."), &ObjectPath, &ObjectName))
-                        {
-                            Rig = ObjectName;
-                        }
-                        else
-                        {
-                            Rig = FPaths::GetCleanFilename(Rig);
-                        }
+                        FString ObjPath, ObjName;
+                        Rig.Split(TEXT("."), &ObjPath, &ObjName);
+                        Rig = ObjName.IsEmpty() ? FPaths::GetCleanFilename(Rig) : ObjName;
                     }
+
                     if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
                     {
                         TArray<FUnrealMidiDeviceInfo> Devices;
                         Midi->EnumerateDevices(Devices);
+
                         if (auto* Router = FMidiMapperModule::GetRouter())
                         {
-                            Router->Init(M); // ensures router knows the mapping manager
-                            UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Router initialized with mapping manager"));
-                            Router->TryBind(); // ensure delegate actually bound now
-                            UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Forced router bind after engine loop complete"));
-                        }
-
-                        for (const auto& D : Devices)
-                        {
-                            if (D.bIsInput)
+                            if (UMidiMappingManager* M = UMidiMappingManager::Get())
                             {
-                                M->Initialize(D.Name, FPaths::GetCleanFilename(Rig));
-                                UE_LOG(LogTemp, Warning, TEXT("[MidiMapperEditor] After init: %d mappings loaded for %s_%s"),
-                                    M->GetAll().Num(), *D.Name, *Rig);
-                                UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Late-init mapping for %s"), *D.Name);
+                                Router->Init(M);
+                                Router->TryBind();
                             }
                         }
+
+                        if (UMidiMappingManager* M = UMidiMappingManager::Get())
+                        {
+                            for (const auto& D : Devices)
+                                if (D.bIsInput)
+                                    M->Initialize(D.Name, Rig);
+                        }
                     }
-                }
-            });
+                });
         }
-        else {
-            FCoreDelegates::OnPostEngineInit.AddLambda([] {
-                FMidiMapperEditorModule& Mod = FModuleManager::LoadModuleChecked<FMidiMapperEditorModule>("MidiMapperEditor");
-                Mod.StartupModule(); // re-run initialization now that engine exists
-            });
+        else
+        {
+            FCoreDelegates::OnPostEngineInit.AddLambda([]()
+                {
+                    FModuleManager::LoadModuleChecked<FMidiMapperEditorModule>("MidiMapperEditor").StartupModule();
+                });
         }
     }
 

@@ -18,9 +18,9 @@ void UMidiEventRouter::TryBind()
 {
     if (GEngine)
     {
-        UE_LOG(LogTemp, Warning, TEXT("MidiEventRouter: attempting immediate bind"));
         if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
         {
+            Midi->OnMidiValue.RemoveDynamic(this, &UMidiEventRouter::OnMidiValueReceived);
             Midi->OnMidiValue.AddDynamic(this, &UMidiEventRouter::OnMidiValueReceived);
             UE_LOG(LogTemp, Warning, TEXT("MidiEventRouter: bound to UnrealMidiSubsystem"));
             return;
@@ -28,7 +28,6 @@ void UMidiEventRouter::TryBind()
     }
 
     FCoreDelegates::OnFEngineLoopInitComplete.AddUObject(this, &UMidiEventRouter::BindAfterEngineInit);
-    UE_LOG(LogTemp, Verbose, TEXT("MidiEventRouter: deferring bind until engine init"));
 }
 
 void UMidiEventRouter::BindAfterEngineInit()
