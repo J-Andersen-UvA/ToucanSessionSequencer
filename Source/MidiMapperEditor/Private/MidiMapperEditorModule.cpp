@@ -222,11 +222,20 @@ private:
     {
         const TSharedRef<SMidiMappingWindow> Window = SNew(SMidiMappingWindow);
 
-        return SNew(SDockTab)
+        TSharedRef<SDockTab> Tab = SNew(SDockTab)
             .TabRole(ETabRole::NomadTab)
             [
                 Window
             ];
+
+        // Clean up when the tab is closed
+        Tab->SetOnTabClosed(SDockTab::FOnTabClosedCallback::CreateLambda([](TSharedRef<SDockTab>)
+            {
+                if (auto* Router = FMidiMapperModule::GetRouter())
+                    Router->CancelLearning();
+            }));
+
+        return Tab;
     }
 };
 

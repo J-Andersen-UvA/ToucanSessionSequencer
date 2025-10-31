@@ -168,6 +168,9 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
                             .OptionsSource(&AvailableDevices)
                             .OnSelectionChanged_Lambda([this](TSharedPtr<FString> NewItem, ESelectInfo::Type)
                                 {
+                                    if (UMidiEventRouter* Router = FMidiMapperModule::GetRouter())
+                                        Router->CancelLearning();
+
                                     if (NewItem.IsValid())
                                     {
                                         ActiveDeviceName = *NewItem;
@@ -220,6 +223,16 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
         RefreshBindings();
         RefreshList();
         UE_LOG(LogTemp, Warning, TEXT("Mapping file path: %s"), *M->GetMappingFilePath(ActiveDeviceName, ActiveRigName));
+    }
+
+    if (auto* Router = FMidiMapperModule::GetRouter())
+    {
+        Router->OnLearningCancelled.AddLambda([this]()
+            {
+                for (auto& Row : Rows)
+                    Row->bIsLearning = false;
+                RefreshList();
+            });
     }
 }
 
@@ -300,8 +313,16 @@ void SMidiMappingWindow::RefreshBindings()
 
 FReply SMidiMappingWindow::OnLearnClicked(TSharedPtr<FControlRow> Row)
 {
-    if (!FMidiMapperModule::GetRouter())
+    auto* Router = FMidiMapperModule::GetRouter();
+
+    if (!Router)
+    {
         return FReply::Handled();
+    }
+    else
+    {
+        Router->CancelLearning();
+    }
 
     // Mark only this row as active
     for (auto& R : Rows)
@@ -341,6 +362,9 @@ void SMidiMappingWindow::OnLearnedControl(FString DeviceName, int32 ControlId, T
 
 FReply SMidiMappingWindow::OnUnbindClicked(TSharedPtr<FControlRow> Row)
 {
+    if (auto* Router = FMidiMapperModule::GetRouter())
+        Router->CancelLearning();
+
     if (!Row.IsValid()) return FReply::Handled();
     if (Row->BoundControlId >= 0)
     {

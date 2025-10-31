@@ -42,6 +42,16 @@ void UMidiEventRouter::ArmLearnOnce(const FString& InDeviceName)
     ActiveLearningDevice = InDeviceName;
 }
 
+void UMidiEventRouter::CancelLearning()
+{
+    bLearning = false;
+    bSuppressNext = false;
+    ActiveLearningDevice.Empty();
+    LastLearnedControl = -1;
+    OnLearningCancelled.Broadcast();
+    UE_LOG(LogTemp, Log, TEXT("MIDI learning cancelled."));
+}
+
 void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
 {
     if (!Manager)

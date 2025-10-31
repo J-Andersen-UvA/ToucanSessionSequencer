@@ -7,6 +7,7 @@
 
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMidiLearnSignature, FString /*DeviceName*/, int32 /*ControlId*/);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMidiAction, FName /*ActionName*/, FMidiControlValue /*Value*/);
+DECLARE_MULTICAST_DELEGATE(FOnLearningCancelled);
 
 UCLASS()
 class MIDIMAPPER_API UMidiEventRouter : public UObject
@@ -24,6 +25,7 @@ public:
     void ArmLearnOnce(const FString& InDeviceName);
     bool IsLearning() const { return bLearning; }
     FOnMidiLearnSignature& OnMidiLearn() { return OnLearn; }
+    void CancelLearning();
 
     // Fire when a mapped action should execute
     FOnMidiAction& OnMidiAction() { return MidiActionDelegate; }
@@ -34,6 +36,7 @@ public:
     }
 
     void TryBind();              // attempt immediate bind
+    FOnLearningCancelled OnLearningCancelled;
 
 private:
     UPROPERTY()
