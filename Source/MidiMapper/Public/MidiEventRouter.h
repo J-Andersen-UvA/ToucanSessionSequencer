@@ -42,6 +42,8 @@ private:
     void BindAfterEngineInit();  // deferred bind
 
     bool bLearning = false;
+    bool bSuppressNext = false;
+    int32 LastLearnedControl = -1;
     FOnMidiLearn OnLearn;
 
     FOnMidiAction MidiActionDelegate;

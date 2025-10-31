@@ -63,13 +63,28 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
         return;
     }
 
+    // --- learning path ---
     if (bLearning)
     {
         bLearning = false;
+        LastLearnedControl = ControlID;
         OnLearn.Broadcast(ControlID);
+        bSuppressNext = true;     // prevent the immediate next event from firing
         return;
     }
 
+    // --- suppression path ---
+    if (bSuppressNext)
+    {
+        if (ControlID == LastLearnedControl)
+        {
+            bSuppressNext = false;
+            return; // skip one duplicate event
+        }
+        bSuppressNext = false;
+    }
+
+    // --- normal mapped execution ---
     FMidiMappedAction Action;
     if (Manager->GetMapping(ControlID, Action))
     {
