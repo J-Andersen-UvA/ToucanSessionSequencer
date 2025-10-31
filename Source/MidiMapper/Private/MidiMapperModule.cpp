@@ -3,6 +3,7 @@
 #include "MidiMappingManager.h"
 #include "UnrealMidiSubsystem.h"
 #include "Modules/ModuleManager.h"
+#include "EditingSessionDelegates.h"
 
 IMPLEMENT_MODULE(FMidiMapperModule, MidiMapper)
 
@@ -47,6 +48,24 @@ void SafeInit()
                 });
         }
     }
+
+    GOnRigChanged.AddLambda([](const FString& NewRig)
+    {
+        if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
+        {
+            if (UMidiMappingManager* M = UMidiMappingManager::Get())
+            {
+                TArray<FUnrealMidiDeviceInfo> Devices;
+                Midi->EnumerateDevices(Devices);
+                for (const auto& D : Devices)
+                {
+                    if (D.bIsInput)
+                        M->Initialize(D.Name, FPaths::GetCleanFilename(NewRig));
+                }
+                UE_LOG(LogTemp, Log, TEXT("[MidiMapperEditor] Reloaded mappings for rig: %s"), *NewRig);
+            }
+        }
+    });
 }
 
 void FMidiMapperModule::StartupModule()
