@@ -170,7 +170,15 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
                             .OnSelectionChanged_Lambda([this](TSharedPtr<FString> NewItem, ESelectInfo::Type)
                                 {
                                     if (NewItem.IsValid())
+                                    {
                                         ActiveDeviceName = *NewItem;
+                                        if (UMidiMappingManager* M = UMidiMappingManager::Get())
+                                        {
+                                            M->Initialize(ActiveDeviceName, ActiveRigName);
+                                        }
+                                        RefreshBindings();
+                                        RefreshList();
+                                    }
                                 })
                             .OnGenerateWidget_Lambda([](TSharedPtr<FString> Item)
                                 {
