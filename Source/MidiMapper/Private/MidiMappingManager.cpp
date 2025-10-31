@@ -20,31 +20,44 @@ UMidiMappingManager* UMidiMappingManager::Get()
 
 void UMidiMappingManager::Initialize(const FString& InDeviceName, const FString& InRigName)
 {
-    DeviceName = InDeviceName;
-    RigName = InRigName;
-    MappingFilePath = GetMappingFilePath();
-    LoadMappings();
-}
-
-void UMidiMappingManager::RegisterMapping(int32 ControlID, const FMidiMappedAction& Action)
-{
-    ControlMappings.Add(ControlID, Action);
-    SaveMappings();
-}
-
-bool UMidiMappingManager::GetMapping(int32 ControlID, FMidiMappedAction& OutAction) const
-{
-    if (const FMidiMappedAction* Found = ControlMappings.Find(ControlID))
+    // Only load once per device; keeps mapping memory persistent.
+    if (!Mappings.Contains(InDeviceName))
     {
-        OutAction = *Found;
-        return true;
+        FMidiDeviceMapping& DevMap = Mappings.Add(InDeviceName);
+        DevMap.RigName = InRigName;
+        LoadMappings(InDeviceName, InRigName);
+    }
+}
+
+void UMidiMappingManager::RegisterMapping(const FString& InDeviceName, int32 ControlID, const FMidiMappedAction& Action)
+{
+    FMidiDeviceMapping& DevMap = Mappings.FindOrAdd(InDeviceName);
+    DevMap.ControlMappings.Add(ControlID, Action);
+    SaveMappings(InDeviceName, DevMap.RigName, DevMap.ControlMappings);
+}
+
+bool UMidiMappingManager::GetMapping(const FString& InDeviceName, int32 ControlID, FMidiMappedAction& OutAction) const
+{
+    if (const FMidiDeviceMapping* DevMap = Mappings.Find(InDeviceName))
+    {
+        if (const FMidiMappedAction* Found = DevMap->ControlMappings.Find(ControlID))
+        {
+            OutAction = *Found;
+            return true;
+        }
     }
     return false;
 }
 
 void UMidiMappingManager::SaveMappings()
 {
-    SaveMappings(DeviceName, RigName, ControlMappings);
+    // Save all active device maps
+    for (const auto& Pair : Mappings)
+    {
+        const FString& DevName = Pair.Key;
+        const FMidiDeviceMapping& Map = Pair.Value;
+        SaveMappings(DevName, Map.RigName, Map.ControlMappings);
+    }
 }
 
 void UMidiMappingManager::SaveMappings(
@@ -68,12 +81,14 @@ void UMidiMappingManager::SaveMappings(
     FFileHelper::SaveStringToFile(OutputString, *FilePath);
 }
 
-void UMidiMappingManager::LoadMappings()
+void UMidiMappingManager::LoadMappings(const FString& InDeviceName, const FString& InRigName)
 {
-    ControlMappings.Empty();
+    FMidiDeviceMapping& DevMap = Mappings.FindOrAdd(InDeviceName);
+    DevMap.RigName = InRigName;
+    DevMap.ControlMappings.Empty();
 
     FString JsonString;
-    if (!FFileHelper::LoadFileToString(JsonString, *GetMappingFilePath()))
+    if (!FFileHelper::LoadFileToString(JsonString, *GetMappingFilePath(InDeviceName, InRigName)))
         return;
 
     TSharedPtr<FJsonObject> RootObj;
@@ -88,15 +103,10 @@ void UMidiMappingManager::LoadMappings()
             {
                 FMidiMappedAction Action;
                 FJsonObjectConverter::JsonObjectToUStruct(ActionObj->ToSharedRef(), &Action);
-                ControlMappings.Add(FCString::Atoi(*Pair.Key), Action);
+                DevMap.ControlMappings.Add(FCString::Atoi(*Pair.Key), Action);
             }
         }
     }
-}
-
-FString UMidiMappingManager::GetMappingFilePath() const
-{
-    return GetMappingFilePath(*DeviceName, *RigName);
 }
 
 FString UMidiMappingManager::GetMappingFilePath(const FString& InDeviceName, const FString& InRigName) const
@@ -106,17 +116,23 @@ FString UMidiMappingManager::GetMappingFilePath(const FString& InDeviceName, con
     return Dir / FString::Printf(TEXT("%s_%s.json"), *InDeviceName, *InRigName);
 }
 
-bool UMidiMappingManager::RemoveMapping(int32 ControlID)
+bool UMidiMappingManager::RemoveMapping(const FString& InDeviceName, int32 ControlID)
 {
-    const bool bRemoved = ControlMappings.Remove(ControlID) > 0;
-    if (bRemoved) SaveMappings();
-    return bRemoved;
+    if (FMidiDeviceMapping* DevMap = Mappings.Find(InDeviceName))
+    {
+        const bool bRemoved = DevMap->ControlMappings.Remove(ControlID) > 0;
+        if (bRemoved)
+        {
+            SaveMappings(InDeviceName, DevMap->RigName, DevMap->ControlMappings);
+            return true;
+        }
+    }
+    return false;
 }
 
-void UMidiMappingManager::RegisterOrUpdate(int32 ControlID, const FMidiMappedAction& Action)
+void UMidiMappingManager::RegisterOrUpdate(const FString& InDeviceName, int32 ControlID, const FMidiMappedAction& Action)
 {
-    RegisterMapping(ControlID, Action);
-    SaveMappings();
+    RegisterMapping(InDeviceName, ControlID, Action);
 }
 
 void UMidiMappingManager::DeactivateDevice(const FString& InDeviceName)

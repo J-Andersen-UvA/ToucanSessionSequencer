@@ -219,7 +219,7 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
         M->Initialize(ActiveDeviceName, ActiveRigName);
         RefreshBindings();
         RefreshList();
-        UE_LOG(LogTemp, Warning, TEXT("Mapping file path: %s"), *M->GetMappingFilePath());
+        UE_LOG(LogTemp, Warning, TEXT("Mapping file path: %s"), *M->GetMappingFilePath(ActiveDeviceName, ActiveRigName));
     }
 }
 
@@ -275,15 +275,20 @@ void SMidiMappingWindow::RefreshBindings()
 {
     if (UMidiMappingManager* M = UMidiMappingManager::Get())
     {
-        // naive reverse lookup by ActionName+Target
-        const auto& Map = M->GetAll();
+        const FMidiDeviceMapping* DeviceMap = M->GetDeviceMapping(ActiveDeviceName);
+        if (!DeviceMap)
+            return;
+
+        const auto& Map = DeviceMap->ControlMappings;
+
         for (auto& Row : Rows)
         {
             Row->BoundControlId = -1;
             for (const auto& KVP : Map)
             {
-                if (KVP.Value.ActionName.ToString() == Row->ActionName &&
-                    KVP.Value.TargetControl.ToString() == Row->TargetControl)
+                const FMidiMappedAction& Action = KVP.Value;
+                if (Action.ActionName.ToString() == Row->ActionName &&
+                    Action.TargetControl.ToString() == Row->TargetControl)
                 {
                     Row->BoundControlId = KVP.Key;
                     break;
@@ -326,7 +331,7 @@ void SMidiMappingWindow::OnLearnedControl(int32 ControlId, TSharedPtr<FControlRo
         A.ActionName = FName(*Row->ActionName);
         A.TargetControl = FName(*Row->TargetControl);
         A.Modus = FName(*Row->Modus);
-        M->RegisterOrUpdate(ControlId, A); // autosave
+        M->RegisterOrUpdate(ActiveDeviceName, ControlId, A); // autosave
     }
     RefreshBindings();
     RefreshList();
@@ -342,7 +347,7 @@ FReply SMidiMappingWindow::OnUnbindClicked(TSharedPtr<FControlRow> Row)
         if (UMidiMappingManager* M = UMidiMappingManager::Get())
         {
             M->Initialize(ActiveDeviceName, ActiveRigName);
-            M->RemoveMapping(Row->BoundControlId); // autosave
+            M->RemoveMapping(ActiveDeviceName, Row->BoundControlId); // autosave
         }
         Row->BoundControlId = -1;
         RefreshBindings();

@@ -35,28 +35,37 @@ public:
     static UMidiMappingManager* Get();
 
     void Initialize(const FString& InDeviceName, const FString& InRigName);
-    void RegisterMapping(int32 ControlID, const FMidiMappedAction& Action);
-    bool GetMapping(int32 ControlID, FMidiMappedAction& OutAction) const;
+
+    void RegisterMapping(const FString& DeviceName, int32 ControlID, const FMidiMappedAction& Action);
+    bool GetMapping(const FString& DeviceName, int32 ControlID, FMidiMappedAction& OutAction) const;
+
+    void RegisterOrUpdate(const FString& DeviceName, int32 ControlID, const FMidiMappedAction& Action);
+    bool RemoveMapping(const FString& DeviceName, int32 ControlID);
+
     void SaveMappings();
     void SaveMappings(const FString& InDeviceName, const FString& InRigName,
         const TMap<int32, FMidiMappedAction>& InMappings);
-    void LoadMappings();
-    const TMap<int32, FMidiMappedAction>& GetAll() const { return ControlMappings; }
-    bool RemoveMapping(int32 ControlID);
-    void RegisterOrUpdate(int32 ControlID, const FMidiMappedAction& Action);
+
+    void LoadMappings(const FString& InDeviceName, const FString& InRigName);
+    //const TMap<int32, FMidiMappedAction>& GetAll() const { return ControlMappings; }
 
     UFUNCTION()
     void DeactivateDevice(const FString& InDeviceName);
 
-    FString GetMappingFilePath() const;
     FString GetMappingFilePath(const FString& InDeviceName, const FString& InRigName) const;
+
+    const FMidiDeviceMapping* GetDeviceMapping(const FString& DeviceName) const
+    {
+        return Mappings.Find(DeviceName);
+    }
+
 private:
-    FString DeviceName;
-    FString RigName;
+    //FString DeviceName;
+    //FString RigName;
     FString MappingFilePath;
 
-    UPROPERTY()
-    TMap<int32, FMidiMappedAction> ControlMappings;
+    //UPROPERTY()
+    //TMap<int32, FMidiMappedAction> ControlMappings;
 
     UPROPERTY()
     TMap<FString, FMidiDeviceMapping> Mappings;

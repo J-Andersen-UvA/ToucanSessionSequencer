@@ -84,9 +84,22 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
         bSuppressNext = false;
     }
 
+    FString DeviceName;
+    if (!UUnrealMidiSubsystem::ParseDeviceFromId(Value.Id, DeviceName))
+        return;
+
+    int32 DotPos;
+    if (DeviceName.FindChar('.', DotPos))
+    {
+        FString Left = DeviceName.Left(DotPos);
+        FString Right = DeviceName.Mid(DotPos + 1);
+        if (Left.Equals(Right, ESearchCase::IgnoreCase))
+            DeviceName = Left;
+    }
+
     // --- normal mapped execution ---
     FMidiMappedAction Action;
-    if (Manager->GetMapping(ControlID, Action))
+    if (Manager->GetMapping(DeviceName, ControlID, Action))
     {
         UE_LOG(LogTemp, Warning, TEXT("MIDI control %d (%s) from %s triggered %s (%s:%s) value=%.3f"),
             ControlID,

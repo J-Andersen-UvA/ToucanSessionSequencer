@@ -5,7 +5,7 @@
 #include "MidiMappingManager.h"
 #include "MidiEventRouter.generated.h"
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnMidiLearn, int32 /*ControlID*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnMidiLearn, int32 ControlID);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMidiAction, FName /*ActionName*/, FMidiControlValue /*Value*/);
 
 UCLASS()
