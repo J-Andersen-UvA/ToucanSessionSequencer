@@ -20,12 +20,26 @@ UMidiMappingManager* UMidiMappingManager::Get()
 
 void UMidiMappingManager::Initialize(const FString& InDeviceName, const FString& InRigName)
 {
+    FString CleanRig = InRigName;
+
+    // Strip suffix of form "X.Y" if identical
+    int32 DotPos;
+    if (CleanRig.FindChar('.', DotPos))
+    {
+        FString Left = CleanRig.Left(DotPos);
+        FString Right = CleanRig.Mid(DotPos + 1);
+        if (Left.Equals(Right, ESearchCase::IgnoreCase))
+        {
+            CleanRig = Left;
+        }
+    }
+
     // Only load once per device; keeps mapping memory persistent.
     if (!Mappings.Contains(InDeviceName))
     {
         FMidiDeviceMapping& DevMap = Mappings.Add(InDeviceName);
-        DevMap.RigName = InRigName;
-        LoadMappings(InDeviceName, InRigName);
+        DevMap.RigName = CleanRig;
+        LoadMappings(InDeviceName, CleanRig);
     }
 }
 

@@ -63,12 +63,16 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
         return;
     }
 
+    FString DeviceName;
+    if (!UUnrealMidiSubsystem::ParseDeviceFromId(Value.Id, DeviceName))
+        return;
+
     // --- learning path ---
     if (bLearning)
     {
         bLearning = false;
         LastLearnedControl = ControlID;
-        OnLearn.Broadcast(ControlID);
+        OnLearn.Broadcast(DeviceName, ControlID);
         bSuppressNext = true;     // prevent the immediate next event from firing
         return;
     }
@@ -83,10 +87,6 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
         }
         bSuppressNext = false;
     }
-
-    FString DeviceName;
-    if (!UUnrealMidiSubsystem::ParseDeviceFromId(Value.Id, DeviceName))
-        return;
 
     int32 DotPos;
     if (DeviceName.FindChar('.', DotPos))

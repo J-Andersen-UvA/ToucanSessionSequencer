@@ -317,7 +317,7 @@ FReply SMidiMappingWindow::OnLearnClicked(TSharedPtr<FControlRow> Row)
     return FReply::Handled();
 }
 
-void SMidiMappingWindow::OnLearnedControl(int32 ControlId, TSharedPtr<FControlRow> Row)
+void SMidiMappingWindow::OnLearnedControl(FString DeviceName, int32 ControlId, TSharedPtr<FControlRow> Row)
 {
     if (!Row.IsValid()) return;
 

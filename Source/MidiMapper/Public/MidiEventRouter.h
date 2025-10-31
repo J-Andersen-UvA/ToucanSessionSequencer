@@ -5,7 +5,7 @@
 #include "MidiMappingManager.h"
 #include "MidiEventRouter.generated.h"
 
-DECLARE_MULTICAST_DELEGATE_OneParam(FOnMidiLearn, int32 ControlID);
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMidiLearnSignature, FString /*DeviceName*/, int32 /*ControlId*/);
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnMidiAction, FName /*ActionName*/, FMidiControlValue /*Value*/);
 
 UCLASS()
@@ -23,7 +23,7 @@ public:
     // learn API
     void ArmLearnOnce();
     bool IsLearning() const { return bLearning; }
-    FOnMidiLearn& OnMidiLearn() { return OnLearn; }
+    FOnMidiLearnSignature& OnMidiLearn() { return OnLearn; }
 
     // Fire when a mapped action should execute
     FOnMidiAction& OnMidiAction() { return MidiActionDelegate; }
@@ -44,7 +44,7 @@ private:
     bool bLearning = false;
     bool bSuppressNext = false;
     int32 LastLearnedControl = -1;
-    FOnMidiLearn OnLearn;
+    FOnMidiLearnSignature OnLearn;
 
     FOnMidiAction MidiActionDelegate;
 
