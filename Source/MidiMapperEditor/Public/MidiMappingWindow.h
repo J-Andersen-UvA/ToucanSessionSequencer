@@ -29,6 +29,7 @@ private:
         FString TargetControl;
         FString Modus;
         int32 BoundControlId;
+        bool bIsLearning = false;
     };
     TArray<TSharedPtr<FControlRow>> Rows;
     TSharedPtr<SListView<TSharedPtr<FControlRow>>> MappingListView;

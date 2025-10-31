@@ -113,7 +113,6 @@ void SMidiMappingWindow::PopulateFromRig(UControlRig* ControlRig)
         Row->TargetControl = FString::Printf(TEXT("Rig.%s"), *Row->ActionName);
         Row->Modus = RigControlTypeToString(ControlType);
         Row->BoundControlId = -1;
-
         Rows.Add(Row);
     }
 
@@ -299,6 +298,12 @@ FReply SMidiMappingWindow::OnLearnClicked(TSharedPtr<FControlRow> Row)
     if (!FMidiMapperModule::GetRouter())
         return FReply::Handled();
 
+    // Mark only this row as active
+    for (auto& R : Rows)
+        R->bIsLearning = false;
+    Row->bIsLearning = true;
+    RefreshList();
+
     UE_LOG(LogTemp, Log, TEXT("Learning for action: %s"), *Row->ActionName);
 
     FMidiMapperModule::GetRouter()->OnMidiLearn().AddSP(this, &SMidiMappingWindow::OnLearnedControl, Row);
@@ -310,6 +315,9 @@ FReply SMidiMappingWindow::OnLearnClicked(TSharedPtr<FControlRow> Row)
 void SMidiMappingWindow::OnLearnedControl(int32 ControlId, TSharedPtr<FControlRow> Row)
 {
     if (!Row.IsValid()) return;
+
+    Row->bIsLearning = false;
+
     if (UMidiMappingManager* M = UMidiMappingManager::Get())
     {
         M->Initialize(ActiveDeviceName, ActiveRigName); // ensure correct context
@@ -321,6 +329,8 @@ void SMidiMappingWindow::OnLearnedControl(int32 ControlId, TSharedPtr<FControlRo
         M->RegisterOrUpdate(ControlId, A); // autosave
     }
     RefreshBindings();
+    RefreshList();
+
     if (GRouter) GRouter->OnMidiLearn().RemoveAll(this);
 }
 
@@ -387,6 +397,19 @@ TSharedRef<ITableRow> SMidiMappingWindow::GenerateMappingRow(
                             [
                                 SNew(SButton)
                                     .Text(FText::FromString("Learn"))
+                                    .ButtonColorAndOpacity_Lambda([R = RowItem]()
+                                        {
+                                            if (R->bIsLearning)
+                                            {
+                                                const double Time = FPlatformTime::Seconds();
+                                                const float Alpha = (FMath::Sin(Time * 4.0) + 1.0f) * 0.5f; // oscillates 0–1 about twice per second
+                                                const FLinearColor StartColor = FLinearColor(0.2f, 1.0f, 0.5f);
+                                                const FLinearColor EndColor = FLinearColor(0.0f, 0.5f, 0.2f);
+                                                return FLinearColor::LerpUsingHSV(StartColor, EndColor, Alpha);
+                                            }
+
+                                            return FLinearColor::White; // default static color
+                                        })
                                     .OnClicked_Lambda([W = OwnerWindow, R = RowItem]()
                                         {
                                             if (auto P = W.Pin()) P->OnLearnClicked(R);
@@ -398,7 +421,7 @@ TSharedRef<ITableRow> SMidiMappingWindow::GenerateMappingRow(
                             .AutoWidth()
                             [
                                 SNew(SButton)
-                                    .Text(FText::FromString("Unlearn"))
+                                    .Text(FText::FromString("Forget"))
                                     .OnClicked_Lambda([W = OwnerWindow, R = RowItem]()
                                         {
                                             if (auto P = W.Pin()) P->OnUnbindClicked(R);
