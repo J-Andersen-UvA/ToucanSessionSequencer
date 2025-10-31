@@ -21,7 +21,7 @@ public:
     void OnMidiValueReceived(const FMidiControlValue& Value);
 
     // learn API
-    void ArmLearnOnce();
+    void ArmLearnOnce(const FString& InDeviceName);
     bool IsLearning() const { return bLearning; }
     FOnMidiLearnSignature& OnMidiLearn() { return OnLearn; }
 
@@ -45,6 +45,7 @@ private:
     bool bSuppressNext = false;
     int32 LastLearnedControl = -1;
     FOnMidiLearnSignature OnLearn;
+    FString ActiveLearningDevice;
 
     FOnMidiAction MidiActionDelegate;
 

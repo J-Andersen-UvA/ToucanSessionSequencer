@@ -312,7 +312,7 @@ FReply SMidiMappingWindow::OnLearnClicked(TSharedPtr<FControlRow> Row)
     UE_LOG(LogTemp, Log, TEXT("Learning for action: %s"), *Row->ActionName);
 
     FMidiMapperModule::GetRouter()->OnMidiLearn().AddSP(this, &SMidiMappingWindow::OnLearnedControl, Row);
-    FMidiMapperModule::GetRouter()->ArmLearnOnce();
+    FMidiMapperModule::GetRouter()->ArmLearnOnce(ActiveDeviceName);
 
     return FReply::Handled();
 }

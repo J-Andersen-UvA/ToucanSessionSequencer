@@ -36,9 +36,10 @@ void UMidiEventRouter::BindAfterEngineInit()
     TryBind();
 }
 
-void UMidiEventRouter::ArmLearnOnce()
+void UMidiEventRouter::ArmLearnOnce(const FString& InDeviceName)
 {
     bLearning = true;
+    ActiveLearningDevice = InDeviceName;
 }
 
 void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
@@ -70,6 +71,12 @@ void UMidiEventRouter::OnMidiValueReceived(const FMidiControlValue& Value)
     // --- learning path ---
     if (bLearning)
     {
+        if (!DeviceName.Equals(ActiveLearningDevice, ESearchCase::IgnoreCase))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("Ignoring learn input from %s, waiting for %s"), *DeviceName, *ActiveLearningDevice);
+            return; // wrong device
+        }
+
         bLearning = false;
         LastLearnedControl = ControlID;
         OnLearn.Broadcast(DeviceName, ControlID);
