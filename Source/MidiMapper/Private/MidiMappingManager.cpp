@@ -44,9 +44,18 @@ bool UMidiMappingManager::GetMapping(int32 ControlID, FMidiMappedAction& OutActi
 
 void UMidiMappingManager::SaveMappings()
 {
-    TSharedRef<FJsonObject> RootObj = MakeShared<FJsonObject>();
+    SaveMappings(DeviceName, RigName, ControlMappings);
+}
 
-    for (const auto& Pair : ControlMappings)
+void UMidiMappingManager::SaveMappings(
+    const FString& InDeviceName,
+    const FString& InRigName,
+    const TMap<int32, FMidiMappedAction>& InMappings)
+{
+    const FString FilePath = GetMappingFilePath(InDeviceName, InRigName);
+
+    TSharedRef<FJsonObject> RootObj = MakeShared<FJsonObject>();
+    for (const auto& Pair : InMappings)
     {
         TSharedPtr<FJsonObject> ActionObj = FJsonObjectConverter::UStructToJsonObject(Pair.Value);
         RootObj->SetObjectField(FString::FromInt(Pair.Key), ActionObj);
@@ -56,7 +65,7 @@ void UMidiMappingManager::SaveMappings()
     TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
     FJsonSerializer::Serialize(RootObj, Writer);
 
-    FFileHelper::SaveStringToFile(OutputString, *MappingFilePath);
+    FFileHelper::SaveStringToFile(OutputString, *FilePath);
 }
 
 void UMidiMappingManager::LoadMappings()
@@ -87,9 +96,14 @@ void UMidiMappingManager::LoadMappings()
 
 FString UMidiMappingManager::GetMappingFilePath() const
 {
+    return GetMappingFilePath(*DeviceName, *RigName);
+}
+
+FString UMidiMappingManager::GetMappingFilePath(const FString& InDeviceName, const FString& InRigName) const
+{
     FString Dir = FPaths::ProjectSavedDir() / TEXT("Config/MidiMappings");
     IFileManager::Get().MakeDirectory(*Dir, true);
-    return Dir / FString::Printf(TEXT("%s_%s.json"), *DeviceName, *RigName);
+    return Dir / FString::Printf(TEXT("%s_%s.json"), *InDeviceName, *InRigName);
 }
 
 bool UMidiMappingManager::RemoveMapping(int32 ControlID)
@@ -103,4 +117,13 @@ void UMidiMappingManager::RegisterOrUpdate(int32 ControlID, const FMidiMappedAct
 {
     RegisterMapping(ControlID, Action);
     SaveMappings();
+}
+
+void UMidiMappingManager::DeactivateDevice(const FString& InDeviceName)
+{
+    if (FMidiDeviceMapping* Existing = Mappings.Find(InDeviceName))
+    {
+        SaveMappings(InDeviceName, Existing->RigName, Existing->ControlMappings);
+        Mappings.Remove(InDeviceName);
+    }
 }

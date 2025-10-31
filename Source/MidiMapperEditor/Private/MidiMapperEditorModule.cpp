@@ -6,6 +6,7 @@
 #include "MidiActionExecutor.h"
 #include "MidiMapperModule.h"
 #include "MidiEventRouter.h"
+#include "UnrealMidiSubsystem.h"
 #include "MidiMappingWindow.h"
 
 static const FName MidiMappingTabName(TEXT("ToucanMidiMapping"));
@@ -37,6 +38,60 @@ public:
         }
 
         InitializeMappingsFromConfig();
+
+        auto BindDeviceDelegates = []()
+            {
+                if (!GEngine) return;
+
+                if (UUnrealMidiSubsystem* MidiSys = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
+                {
+                    static FDelegateHandle ConnH;
+                    static FDelegateHandle DiscH;
+
+                    if (!ConnH.IsValid())
+                    {
+                        ConnH = MidiSys->OnDeviceConnected.AddLambda([](const FString& Device)
+                            {
+                                if (UMidiMappingManager* M = UMidiMappingManager::Get())
+                                {
+                                    FString Rig;
+                                    GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), Rig, GEditorPerProjectIni);
+                                    if (Rig.IsEmpty()) Rig = TEXT("DefaultRig");
+                                    M->Initialize(Device, FPaths::GetCleanFilename(Rig));
+                                    if (auto* Window = SMidiMappingWindow::GetActiveInstance())
+                                    {
+                                        Window->RefreshList();
+                                    }
+                                    UE_LOG(LogTemp, Log, TEXT("Hot-loaded mapping for device '%s'"), *Device);
+                                }
+                            });
+                    }
+
+                    if (!DiscH.IsValid())
+                    {
+                        DiscH = MidiSys->OnDeviceDisconnected.AddLambda([](const FString& Device)
+                            {
+                                if (UMidiMappingManager* M = UMidiMappingManager::Get())
+                                {
+                                    M->DeactivateDevice(Device);
+                                    UE_LOG(LogTemp, Log, TEXT("Device disconnected: %s"), *Device);
+                                }
+                            });
+                    }
+                }
+
+                FSlateApplication::Get().GetRenderer()->OnSlateWindowRendered().AddLambda([](SWindow&, void*)
+                    {
+                        if (SMidiMappingWindow* W = SMidiMappingWindow::GetActiveInstance())
+                        {
+                            W->RefreshBindings();
+                            W->RefreshList();
+                        }
+                    });
+            };
+
+        if (GEngine) BindDeviceDelegates();
+        else FCoreDelegates::OnPostEngineInit.AddLambda(BindDeviceDelegates);
     }
 
     virtual void ShutdownModule() override

@@ -9,6 +9,9 @@ public:
     SLATE_END_ARGS()
 
     void Construct(const FArguments& InArgs);
+    static SMidiMappingWindow* GetActiveInstance();
+    void RefreshList();
+    void RefreshBindings();      // read manager.GetAll() into Rows
 
 private:
     // header state
@@ -32,7 +35,6 @@ private:
 
     // helpers
     void RefreshRigAndRows();    // fetch rig + static actions
-    void RefreshBindings();      // read manager.GetAll() into Rows
     void SetActiveDevice(const FString& Device);
     void PopulateFromRig(UControlRig* ControlRig);
 

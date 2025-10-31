@@ -19,6 +19,21 @@
 
 #define GRouter FMidiMapperModule::GetRouter()
 
+static TWeakPtr<SMidiMappingWindow> ActiveWindow;
+
+SMidiMappingWindow* SMidiMappingWindow::GetActiveInstance()
+{
+    return ActiveWindow.IsValid() ? ActiveWindow.Pin().Get() : nullptr;
+}
+
+void SMidiMappingWindow::RefreshList()
+{
+    if (MappingListView.IsValid())
+    {
+        MappingListView->RequestListRefresh();
+    }
+}
+
 static FString RigControlTypeToString(ERigControlType Type)
 {
     switch (Type)
@@ -113,6 +128,7 @@ void SMidiMappingWindow::PopulateFromRig(UControlRig* ControlRig)
 
 void SMidiMappingWindow::Construct(const FArguments& InArgs)
 {
+    ActiveWindow = SharedThis(this);
     RefreshRigAndRows();
 
     if (UUnrealMidiSubsystem* Midi = GEngine->GetEngineSubsystem<UUnrealMidiSubsystem>())
@@ -185,6 +201,18 @@ void SMidiMappingWindow::Construct(const FArguments& InArgs)
     // simple manual widget creation: replace with SListView later
     // Render rows now:
     RefreshBindings();
+
+    if (MappingListView.IsValid())
+    {
+        MappingListView->RequestListRefresh();
+    }
+
+    if (UMidiMappingManager* M = UMidiMappingManager::Get())
+    {
+        M->Initialize(ActiveDeviceName, ActiveRigName);
+        RefreshBindings();
+        RefreshList();
+    }
 }
 
 void SMidiMappingWindow::RefreshRigAndRows()
