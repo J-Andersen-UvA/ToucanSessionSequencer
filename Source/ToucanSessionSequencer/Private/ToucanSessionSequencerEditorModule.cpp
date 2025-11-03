@@ -21,6 +21,7 @@
 #include "SEditingSessionWindow.h"
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyleRegistry.h"
+#include "ToucanMidiRigBinder.h"
 
 static const FName ToucanEditingTabName(TEXT("ToucanEditingSession"));
 
@@ -53,6 +54,24 @@ public:
         // Add to main menu (e.g. Window → Developer Tools)
         UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(
             this, &FToucanSequencerEditorModule::RegisterMenus));
+
+        if (FModuleManager::Get().IsModuleLoaded("MidiMapper"))
+        {
+            FToucanMidiRigBinder::BindRigChangeListener();
+            FToucanMidiRigBinder::RegisterRigControls();
+        }
+        else
+        {
+        #if WITH_MIDIMAPPER
+            FModuleManager::Get().LoadModule("MidiMapper");
+            FModuleManager::LoadModuleChecked<IModuleInterface>("MidiMapper");
+            UE_LOG(LogTemp, Log, TEXT("MidiMapper loaded manually by ToucanSessionSequencer."));
+            FToucanMidiRigBinder::BindRigChangeListener();
+            FToucanMidiRigBinder::RegisterRigControls();
+        #else
+            UE_LOG(LogTemp, Log, TEXT("MidiMapper loading skipped."));
+        #endif
+        }
     }
 
     virtual void ShutdownModule() override

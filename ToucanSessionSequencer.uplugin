@@ -10,16 +10,14 @@
             "Name": "ToucanSessionSequencer",
             "Type": "Editor",
             "LoadingPhase": "Default"
-        },
-        {
-            "Name": "MidiMapper",
-            "Type": "Editor",
-            "LoadingPhase": "Default"
-        },
-        {
-            "Name": "MidiMapperEditor",
-            "Type": "Editor"
         }
     ],
-    "EnabledByDefault": true
+    "EnabledByDefault": true,
+    "Plugins": [
+        {
+            "Name": "UnrealMidi",
+            "Enabled": true,
+            "Optional": true
+        }
+    ]
 }
