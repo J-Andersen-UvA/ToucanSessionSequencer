@@ -1,4 +1,5 @@
-﻿using UnrealBuildTool;
+﻿using System.IO;
+using UnrealBuildTool;
 using UnrealBuildTool.Rules;
 
 public class ToucanSessionSequencer : ModuleRules
@@ -33,6 +34,16 @@ public class ToucanSessionSequencer : ModuleRules
             "AnimGraphRuntime",
             "EditorScriptingUtilities",
             "MovieSceneTools",
+            "ControlRig"
         });
+
+        bool bHasMidiMapper = Directory.Exists(Path.Combine(ModuleDirectory, "../../../UnrealMidi/Source/MidiMapper"));
+        PublicDefinitions.Add("WITH_MIDIMAPPER=" + (bHasMidiMapper ? "1" : "0"));
+
+        if (bHasMidiMapper)
+        {
+            PrivateDependencyModuleNames.Add("MidiMapper");
+            PrivateDependencyModuleNames.Add("MidiMapperEditor");
+        }
     }
 }
