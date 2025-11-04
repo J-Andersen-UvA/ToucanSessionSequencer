@@ -145,6 +145,18 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
     // Add rig if selected
     AddRigToSequence(LevelSequence, Rig);
 
+    if (IAssetEditorInstance* Inst = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()
+        ->FindEditorForAsset(LevelSequence, false))
+    {
+        if (ILevelSequenceEditorToolkit* Toolkit = static_cast<ILevelSequenceEditorToolkit*>(Inst))
+        {
+            if (TSharedPtr<ISequencer> Seq = Toolkit->GetSequencer())
+            {
+                Seq->ForceEvaluate(); // ensures ControlRig runtime object is spawned
+            }
+        }
+    }
+
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation '%s' into Level Sequence."), *Animation->GetName());
 }
 

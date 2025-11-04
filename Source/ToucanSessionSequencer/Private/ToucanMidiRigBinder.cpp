@@ -4,12 +4,20 @@
 #include "MidiMappingManager.h"
 #endif
 
+#include "ControlRigSequencerEditorLibrary.h"
 #include "ControlRig.h"
+#include "LevelSequence.h"
 #include "Rigs/RigHierarchy.h"
 #include "Misc/ConfigCacheIni.h"
 #include "UObject/SoftObjectPath.h"
 #include "Modules/ModuleManager.h"
 #include "EditingSessionDelegates.h"
+#include "MovieScene.h"
+#include "MovieSceneSequence.h"
+#include "Sequencer/MovieSceneControlRigParameterTrack.h"
+#include "Sequencer/MovieSceneControlRigParameterSection.h"
+#include "ISequencer.h"
+#include "SequencerControlSubsystem.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogToucanRigBinder, Log, All);
 
@@ -76,10 +84,9 @@ void FToucanMidiRigBinder::RegisterRigControls()
             const FName ControlName = CtrlElem->GetFName();
 
             FMidiRegisteredFunction Func;
-            Func.Id = ControlName.ToString();
-            Func.Label = FString::Printf(TEXT("Rig.%s"), *ControlName.ToString());
-            Func.Callback = nullptr;
-
+            Func.Id = FString::Printf(TEXT("Rig.%s"), *ControlName.ToString());
+            Func.Label = Func.Id;
+            Func.Callback.BindStatic(&FToucanMidiRigBinder::OnMidiControlInput);
             Manager->RegisterFunction(Func.Label, Func.Id, Func.Callback);
         }
 
@@ -119,3 +126,98 @@ void FToucanMidiRigBinder::BindRigChangeListener()
 }
 
 #endif
+
+void FToucanMidiRigBinder::OnMidiControlInput(const FString& Device, int32 ControlId, float Value, const FString& FunctionId)
+{
+    UE_LOG(LogToucanRigBinder, Log, TEXT("Triggered %s from %s:%d = %.3f"), *FunctionId, *Device, ControlId, Value);
+
+    FString RigPath;
+    GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), RigPath, GEditorPerProjectIni);
+    FString RigName = FPaths::GetBaseFilename(RigPath);
+
+    UMovieSceneSequence* Sequence = USequencerControlSubsystem::GetCurrentSequence();
+    if (!Sequence)
+    {
+        UE_LOG(LogToucanRigBinder, Warning,
+            TEXT("OnMidiControlInput: No active sequencer found (Device=%s, Control=%d, FuncId=%s)"),
+            *Device, ControlId, *FunctionId);
+        return;
+    }
+
+    UControlRig* Rig = USequencerControlSubsystem::GetBoundRigFromSequencer(Sequence, RigName);
+    if (!Rig)
+    {
+        UE_LOG(LogToucanRigBinder, Warning,
+            TEXT("OnMidiControlInput: Could not resolve rig '%s' (Path=%s, FuncId=%s)"),
+            *RigName, *RigPath, *FunctionId);
+        return;
+    }
+
+    FName ControlName = *FunctionId.RightChop(4); // strip "Rig."
+    float Normalized = Value; // Is already normalized?
+    FToucanMidiRigBinder::KeyframeRigControlNow(Rig, ControlName, Normalized);
+}
+
+void FToucanMidiRigBinder::KeyframeRigControlNow(UControlRig* Rig, const FName& ControlName, float NormalizedValue)
+{
+    UMovieSceneSequence* Seq = USequencerControlSubsystem::GetCurrentSequence();
+    const int32 Frame = USequencerControlSubsystem::GetCurrentTimeInFrames();
+    KeyframeRigControlAt(Rig, ControlName, Frame, NormalizedValue, Seq);
+}
+
+void FToucanMidiRigBinder::KeyframeRigControlAt(
+    UControlRig* Rig,
+    const FName& ControlName,
+    int32 FrameNumber,
+    float NormalizedValue,
+    UMovieSceneSequence* Sequence)
+{
+    if (!Rig || !Sequence)
+    {
+        UE_LOG(LogToucanRigBinder, Warning, TEXT("KeyframeRigControlAt: Invalid input (Rig or Sequence null)"));
+        return;
+    }
+
+    FRigControlElement* Control = Rig->FindControl(ControlName);
+    if (!Control)
+    {
+        UE_LOG(LogToucanRigBinder, Warning, TEXT("Control '%s' not found on rig '%s'"), *ControlName.ToString(), *Rig->GetName());
+        return;
+    }
+
+    // Fetch control settings
+    const float Min = Control->Settings.MinimumValue.Get<float>();
+    const float Max = Control->Settings.MaximumValue.Get<float>();
+
+    // Remap normalized (0–1) to rig control range
+    const float MappedValue = FMath::Lerp(Min, Max, NormalizedValue);
+
+    FFrameNumber FrameNum(FrameNumber);
+
+    UE_LOG(LogToucanRigBinder, Log,
+        TEXT("Keyframing ControlRig '%s' control '%s' at frame %d (%.3f mapped %.3f → %.3f)"),
+        *Rig->GetName(), *ControlName.ToString(), FrameNumber, NormalizedValue, Min, Max);
+
+    if (ULevelSequence* LevelSeq = Cast<ULevelSequence>(Sequence))
+    {
+        UControlRigSequencerEditorLibrary::SetLocalControlRigFloat(
+            LevelSeq,
+            Rig,
+            ControlName,
+            FrameNum,
+            MappedValue,
+            EMovieSceneTimeUnit::DisplayRate,
+            true);
+
+        float Cur = UControlRigSequencerEditorLibrary::GetLocalControlRigFloat(
+            LevelSeq,
+            Rig,
+            ControlName,
+            FrameNum,
+            EMovieSceneTimeUnit::DisplayRate);
+
+        UE_LOG(LogToucanRigBinder, Log,
+            TEXT("Confirmed key on '%s' = %.3f (range %.3f–%.3f)"),
+            *ControlName.ToString(), Cur, Min, Max);
+    }
+}

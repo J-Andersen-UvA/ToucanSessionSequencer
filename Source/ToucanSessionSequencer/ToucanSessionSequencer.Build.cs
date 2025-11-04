@@ -34,7 +34,12 @@ public class ToucanSessionSequencer : ModuleRules
             "AnimGraphRuntime",
             "EditorScriptingUtilities",
             "MovieSceneTools",
-            "ControlRig"
+            "ControlRig",
+            "ControlRigDeveloper",
+            "ControlRigEditor",
+            "SequencerScripting",
+            "LevelEditor",
+            "Sequencer"
         });
 
         bool bHasMidiMapper = Directory.Exists(Path.Combine(ModuleDirectory, "../../../UnrealMidi/Source/MidiMapper"));
