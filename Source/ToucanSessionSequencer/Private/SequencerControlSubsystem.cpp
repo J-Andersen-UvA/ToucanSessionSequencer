@@ -1,4 +1,8 @@
 #include "SequencerControlSubsystem.h"
+#if WITH_MIDIMAPPER
+#include "MidiMappingManager.h"
+#endif
+
 #include "ISequencer.h"
 #include "ISequencerModule.h"
 #include "LevelSequence.h"
@@ -11,6 +15,11 @@
 #include "MovieSceneBinding.h"
 #include "Sequencer/MovieSceneControlRigParameterTrack.h"
 
+float USequencerControlSubsystem::lastTimeStep = 0.0;
+bool USequencerControlSubsystem::bSmallStepHeld = false;
+bool USequencerControlSubsystem::bLargeStepHeld = false;
+TArray<FName> USequencerControlSubsystem::LastTouchedControls;
+
 ISequencer* USequencerControlSubsystem::GetCurrentOpenSequencer()
 {
     // Try to get the active LevelSequence from the editor
@@ -18,7 +27,7 @@ ISequencer* USequencerControlSubsystem::GetCurrentOpenSequencer()
     if (!AssetEditorSubsystem)
         return nullptr;
 
-    // Find the first LevelSequence editor that’s open
+    // Find the first LevelSequence editor thats open
     TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
     for (UObject* Asset : EditedAssets)
     {
@@ -200,4 +209,130 @@ UControlRig* USequencerControlSubsystem::GetBoundRigFromSequencer(
     }
 
     return nullptr;
+}
+
+void USequencerControlSubsystem::PlaySequencer(bool bPlay)
+{
+    if (ISequencer* Seq = GetCurrentOpenSequencer())
+        Seq->SetPlaybackStatus(bPlay ? EMovieScenePlayerStatus::Playing : EMovieScenePlayerStatus::Stopped);
+}
+
+void USequencerControlSubsystem::KeyframeAllRigControlsToZero() {}
+void USequencerControlSubsystem::KeyframeLastTouchedControls() {}
+
+void USequencerControlSubsystem::SetLastTouchedControls(const TArray<FName>& ControlNames)
+{
+    LastTouchedControls = ControlNames;
+}
+
+const TArray<FName>& USequencerControlSubsystem::GetLastTouchedControls()
+{
+    return LastTouchedControls;
+}
+
+void USequencerControlSubsystem::ClearLastTouchedControls()
+{
+    LastTouchedControls.Reset();
+}
+
+void USequencerControlSubsystem::RegisterSequencerMidiFunctions()
+{
+#if WITH_MIDIMAPPER
+    if (UMidiMappingManager* Manager = UMidiMappingManager::Get())
+    {
+        auto Bind = [&](const FString& Id, void(*Func)(const FMidiControlValue&))
+        {
+            FMidiRegisteredFunction F;
+            F.Id = Id;
+            F.Label = Id;
+            F.Callback.BindStatic(Func);
+            Manager->RegisterFunction(F.Label, F.Id, F.Callback);
+        };
+
+        Bind(TEXT("Seq.TimeControl"), &USequencerControlSubsystem::OnMidi_TimeControl);
+        Bind(TEXT("Seq.StepForward"), &USequencerControlSubsystem::OnMidi_StepForward);
+        Bind(TEXT("Seq.StepBackward"), &USequencerControlSubsystem::OnMidi_StepBackward);
+        Bind(TEXT("Seq.PlayHold"), &USequencerControlSubsystem::OnMidi_PlayHold);
+        Bind(TEXT("Seq.KeyframeZero"), &USequencerControlSubsystem::OnMidi_KeyframeAllZero);
+        Bind(TEXT("Seq.KeyframeLastTouched"), &USequencerControlSubsystem::OnMidi_KeyframeLastTouched);
+        Bind(TEXT("Seq.SmallStepButton"), &USequencerControlSubsystem::OnMidi_SmallStepButton);
+        Bind(TEXT("Seq.LargeStepButton"), &USequencerControlSubsystem::OnMidi_LargeStepButton);
+
+        UE_LOG(LogTemp, Log, TEXT("Registered global Sequencer MIDI functions"));
+    }
+#endif
+}
+
+void USequencerControlSubsystem::OnMidi_TimeControl(const FMidiControlValue& V)
+{
+    UE_LOG(LogTemp, Log, TEXT("\tOnMidi_TimeControl val and prev: %f - %f"), V.Value, lastTimeStep);
+
+    float Delta = V.Value - lastTimeStep;
+
+    const int stepSize = bSmallStepHeld ? 1 : (bLargeStepHeld ? 10 : 5);
+    // When we reach 127, we should keep going inf
+    if (Delta > 0 || V.Value >= 127)
+    {
+        AdvanceByFrames(+stepSize);
+    }
+    else
+    {
+        AdvanceByFrames(-stepSize);
+    }
+
+    lastTimeStep = V.Value;
+}
+
+// Callback stubs
+void USequencerControlSubsystem::OnMidi_SmallStepButton(const FMidiControlValue& V)
+{
+    bSmallStepHeld = (V.Value >= 0.5f);
+}
+
+void USequencerControlSubsystem::OnMidi_LargeStepButton(const FMidiControlValue& V)
+{
+    bLargeStepHeld = (V.Value >= 0.5f);
+}
+
+void USequencerControlSubsystem::OnMidi_StepForward(const FMidiControlValue& V)
+{
+    if (V.Value > 0.5f)
+        StepSequencer(+1);
+}
+
+void USequencerControlSubsystem::OnMidi_StepBackward(const FMidiControlValue& V)
+{
+    if (V.Value > 0.5f)
+        StepSequencer(-1);
+}
+
+void USequencerControlSubsystem::StepSequencer(int32 Direction)
+{
+    int32 StepSize = 5;
+    if (bSmallStepHeld && !bLargeStepHeld)
+        StepSize = 1;
+    else if (bLargeStepHeld && !bSmallStepHeld)
+        StepSize = 10;
+    else if (bSmallStepHeld && bLargeStepHeld)
+        StepSize = 20;
+
+    AdvanceByFrames(Direction * StepSize);
+    UE_LOG(LogTemp, Log, TEXT("StepSequencer: dir=%d size=%d"), Direction, StepSize);
+}
+
+void USequencerControlSubsystem::OnMidi_PlayHold(const FMidiControlValue& V)
+{
+    PlaySequencer(V.Value > 0.5f);
+}
+
+void USequencerControlSubsystem::OnMidi_KeyframeAllZero(const FMidiControlValue& V)
+{
+    if (V.Value > 0.5f)
+        KeyframeAllRigControlsToZero();
+}
+
+void USequencerControlSubsystem::OnMidi_KeyframeLastTouched(const FMidiControlValue& V)
+{
+    if (V.Value > 0.5f)
+        KeyframeLastTouchedControls();
 }

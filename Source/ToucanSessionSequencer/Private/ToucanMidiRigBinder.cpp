@@ -107,7 +107,7 @@ void FToucanMidiRigBinder::BindRigChangeListener()
         {
             UE_LOG(LogToucanRigBinder, Log, TEXT("Rig changed → re-registering MIDI functions for %s"), *NewRigPath);
             if (UMidiMappingManager* M = UMidiMappingManager::Get())
-                M->ClearRegisteredFunctions();
+                M->UnregisterTopic(TEXT("Rig."));
 
             FToucanMidiRigBinder::RegisterRigControls();
         });
@@ -127,20 +127,23 @@ void FToucanMidiRigBinder::BindRigChangeListener()
 
 #endif
 
-void FToucanMidiRigBinder::OnMidiControlInput(const FString& Device, int32 ControlId, float Value, const FString& FunctionId)
+void FToucanMidiRigBinder::OnMidiControlInput(const FMidiControlValue& V)
 {
-    UE_LOG(LogToucanRigBinder, Log, TEXT("Triggered %s from %s:%d = %.3f"), *FunctionId, *Device, ControlId, Value);
-
     FString RigPath;
     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), RigPath, GEditorPerProjectIni);
     FString RigName = FPaths::GetBaseFilename(RigPath);
+ 
+    FString FunctionId = TEXT("Rig.");
+
+    //const FString& Device, int32 ControlId, float Value, const FString& FunctionId;
+    UE_LOG(LogToucanRigBinder, Log, TEXT("Triggered %s from %s:%d = %.3f"), *FunctionId, *V.Device, V.ControlId, V.Value);
 
     UMovieSceneSequence* Sequence = USequencerControlSubsystem::GetCurrentSequence();
     if (!Sequence)
     {
         UE_LOG(LogToucanRigBinder, Warning,
             TEXT("OnMidiControlInput: No active sequencer found (Device=%s, Control=%d, FuncId=%s)"),
-            *Device, ControlId, *FunctionId);
+            *V.Device, V.ControlId, *FunctionId);
         return;
     }
 
@@ -154,7 +157,7 @@ void FToucanMidiRigBinder::OnMidiControlInput(const FString& Device, int32 Contr
     }
 
     FName ControlName = *FunctionId.RightChop(4); // strip "Rig."
-    float Normalized = Value; // Is already normalized?
+    float Normalized = V.Value; // Is already normalized?
     FToucanMidiRigBinder::KeyframeRigControlNow(Rig, ControlName, Normalized);
 }
 

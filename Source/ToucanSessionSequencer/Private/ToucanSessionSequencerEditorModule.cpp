@@ -22,6 +22,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyleRegistry.h"
 #include "ToucanMidiRigBinder.h"
+#include "SequencerControlSubsystem.h"
 
 static const FName ToucanEditingTabName(TEXT("ToucanEditingSession"));
 
@@ -57,6 +58,7 @@ public:
 
         if (FModuleManager::Get().IsModuleLoaded("MidiMapper"))
         {
+            USequencerControlSubsystem::RegisterSequencerMidiFunctions();
             FToucanMidiRigBinder::BindRigChangeListener();
             FToucanMidiRigBinder::RegisterRigControls();
         }
@@ -66,12 +68,14 @@ public:
             FModuleManager::Get().LoadModule("MidiMapper");
             FModuleManager::LoadModuleChecked<IModuleInterface>("MidiMapper");
             UE_LOG(LogTemp, Log, TEXT("MidiMapper loaded manually by ToucanSessionSequencer."));
+            USequencerControlSubsystem::RegisterSequencerMidiFunctions();
             FToucanMidiRigBinder::BindRigChangeListener();
             FToucanMidiRigBinder::RegisterRigControls();
         #else
             UE_LOG(LogTemp, Log, TEXT("MidiMapper loading skipped."));
         #endif
         }
+
     }
 
     virtual void ShutdownModule() override
