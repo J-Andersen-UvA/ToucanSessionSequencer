@@ -43,57 +43,48 @@ static UControlRig* LoadControlRigFromPath(const FString& RigPath)
 }
 
 #if WITH_MIDIMAPPER
-
 void FToucanMidiRigBinder::RegisterRigControls()
 {
     FString RigPath;
     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), RigPath, GEditorPerProjectIni);
-    if (RigPath.IsEmpty())
-    {
-        UE_LOG(LogToucanRigBinder, Warning, TEXT("No rig path in config"));
-        return;
-    }
+    if (RigPath.IsEmpty()) { UE_LOG(LogToucanRigBinder, Warning, TEXT("No rig path in config")); return; }
 
     UControlRig* ControlRig = LoadControlRigFromPath(RigPath);
-    if (!ControlRig)
-    {
-        UE_LOG(LogToucanRigBinder, Warning, TEXT("Failed to load ControlRig from %s"), *RigPath);
-        return;
-    }
+    if (!ControlRig) { UE_LOG(LogToucanRigBinder, Warning, TEXT("Failed to load ControlRig from %s"), *RigPath); return; }
 
     URigHierarchy* Hierarchy = ControlRig->GetHierarchy();
-    if (!Hierarchy)
-    {
-        UE_LOG(LogToucanRigBinder, Warning, TEXT("No hierarchy found for %s"), *ControlRig->GetName());
-        return;
-    }
+    if (!Hierarchy) { UE_LOG(LogToucanRigBinder, Warning, TEXT("No hierarchy for %s"), *ControlRig->GetName()); return; }
 
     const TArray<FRigControlElement*> Controls = Hierarchy->GetControls();
-    if (Controls.IsEmpty())
-    {
-        UE_LOG(LogToucanRigBinder, Warning, TEXT("Rig %s has no controls"), *ControlRig->GetName());
-        return;
-    }
+    if (Controls.IsEmpty()) { UE_LOG(LogToucanRigBinder, Warning, TEXT("Rig %s has no controls"), *ControlRig->GetName()); return; }
 
+#if WITH_MIDIMAPPER
     if (UMidiMappingManager* Manager = UMidiMappingManager::Get())
     {
+        // avoid duplicates on re-register
+        Manager->UnregisterTopic(TEXT("Rig."));
+
         for (const FRigControlElement* CtrlElem : Controls)
         {
             if (!CtrlElem) continue;
-
             const FName ControlName = CtrlElem->GetFName();
 
             FMidiRegisteredFunction Func;
             Func.Id = FString::Printf(TEXT("Rig.%s"), *ControlName.ToString());
             Func.Label = Func.Id;
-            Func.Callback.BindStatic(&FToucanMidiRigBinder::OnMidiControlInput);
+
+            const FString FuncIdCopy = Func.Id; // capture by value
+            Func.Callback.BindLambda([FuncIdCopy](const FMidiControlValue& V)
+                {
+                    FToucanMidiRigBinder::OnMidiControlInput(FuncIdCopy, V);
+                });
+
             Manager->RegisterFunction(Func.Label, Func.Id, Func.Callback);
         }
 
-        UE_LOG(LogToucanRigBinder, Log,
-            TEXT("Registered %d rig controls from %s"),
-            Controls.Num(), *ControlRig->GetName());
+        UE_LOG(LogToucanRigBinder, Log, TEXT("Registered %d rig controls from %s"), Controls.Num(), *ControlRig->GetName());
     }
+#endif
 }
 
 void FToucanMidiRigBinder::BindRigChangeListener()
@@ -127,38 +118,40 @@ void FToucanMidiRigBinder::BindRigChangeListener()
 
 #endif
 
-void FToucanMidiRigBinder::OnMidiControlInput(const FMidiControlValue& V)
+void FToucanMidiRigBinder::OnMidiControlInput(const FString& FunctionId, const FMidiControlValue& V)
 {
     FString RigPath;
     GConfig->GetString(TEXT("ToucanEditingSession"), TEXT("LastSelectedRig"), RigPath, GEditorPerProjectIni);
-    FString RigName = FPaths::GetBaseFilename(RigPath);
- 
-    FString FunctionId = TEXT("Rig.");
+    const FString RigName = FPaths::GetBaseFilename(RigPath);
 
-    //const FString& Device, int32 ControlId, float Value, const FString& FunctionId;
-    UE_LOG(LogToucanRigBinder, Log, TEXT("Triggered %s from %s:%d = %.3f"), *FunctionId, *V.Device, V.ControlId, V.Value);
+    UE_LOG(LogToucanRigBinder, Log, TEXT("Triggered %s from %s:%d = %.3f"),
+        *FunctionId, *V.Device, V.ControlId, V.Value);
 
     UMovieSceneSequence* Sequence = USequencerControlSubsystem::GetCurrentSequence();
     if (!Sequence)
     {
-        UE_LOG(LogToucanRigBinder, Warning,
-            TEXT("OnMidiControlInput: No active sequencer found (Device=%s, Control=%d, FuncId=%s)"),
-            *V.Device, V.ControlId, *FunctionId);
+        UE_LOG(LogToucanRigBinder, Warning, TEXT("No active sequencer (FuncId=%s)"), *FunctionId);
         return;
     }
 
     UControlRig* Rig = USequencerControlSubsystem::GetBoundRigFromSequencer(Sequence, RigName);
     if (!Rig)
     {
-        UE_LOG(LogToucanRigBinder, Warning,
-            TEXT("OnMidiControlInput: Could not resolve rig '%s' (Path=%s, FuncId=%s)"),
-            *RigName, *RigPath, *FunctionId);
+        UE_LOG(LogToucanRigBinder, Warning, TEXT("No rig '%s' (FuncId=%s)"), *RigName, *FunctionId);
         return;
     }
 
-    FName ControlName = *FunctionId.RightChop(4); // strip "Rig."
-    float Normalized = V.Value; // Is already normalized?
-    FToucanMidiRigBinder::KeyframeRigControlNow(Rig, ControlName, Normalized);
+    // Parse control name from Id: "Rig.<Control>"
+    const FString ControlStr = FunctionId.StartsWith(TEXT("Rig.")) ? FunctionId.RightChop(4) : FunctionId;
+    const FName ControlName = FName(*ControlStr);
+    if (ControlName.IsNone())
+    {
+        UE_LOG(LogToucanRigBinder, Warning, TEXT("Empty control name parsed from '%s'"), *FunctionId);
+        return;
+    }
+
+    const float Normalized = V.Value; // already 0..1
+    KeyframeRigControlNow(Rig, ControlName, Normalized);
 }
 
 void FToucanMidiRigBinder::KeyframeRigControlNow(UControlRig* Rig, const FName& ControlName, float NormalizedValue)
