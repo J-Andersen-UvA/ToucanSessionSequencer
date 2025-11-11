@@ -3,6 +3,7 @@
 #include "Misc/Paths.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "EditorAssetLibrary.h"
+#include "SeqQueue.h"
 
 FString FOutputHelper::CurrentFolder = FOutputHelper::GetDefaultFolder();
 
@@ -79,6 +80,8 @@ void FOutputHelper::MarkAssetAsProcessed(const FString& AssetPath)
     if (UEditorAssetLibrary::SaveAsset(AssetPath))
     {
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Marked %s as Processed=True"), *AssetPath);
+        // Invalidate the processed count cache to update progress bar
+        FSeqQueue::Get().RefreshProcessedCount();
     }
     else
     {

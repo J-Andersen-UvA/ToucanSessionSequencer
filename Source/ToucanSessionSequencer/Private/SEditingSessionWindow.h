@@ -61,4 +61,6 @@ private:
 
     void LoadSettings();
     void SaveSettings() const;
+
+    TSharedRef<SWidget> BuildProgressBarSection();
 };
