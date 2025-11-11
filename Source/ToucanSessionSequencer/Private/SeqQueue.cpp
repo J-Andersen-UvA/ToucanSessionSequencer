@@ -13,7 +13,9 @@ void FSeqQueue::Load()
     const FString& Ini = GGameIni;
 #endif
     GConfig->GetArray(SeqCfg::Section, SeqCfg::Key, Paths, Ini);
-
+    GConfig->GetInt(SeqCfg::Section, SeqCfg::CurrentIndexKey, CurrentIndex, Ini);
+    CurrentIndex = CheckBoundsIndex(CurrentIndex) ? CurrentIndex : INDEX_NONE;
+    
     for (const FString& S : Paths)
     {
         FSoftObjectPath P(S);
@@ -39,6 +41,7 @@ void FSeqQueue::Save() const
     const FString& Ini = GGameIni;
 #endif
     GConfig->SetArray(SeqCfg::Section, SeqCfg::Key, Paths, Ini);
+    GConfig->SetInt(SeqCfg::Section, SeqCfg::CurrentIndexKey, CurrentIndex, Ini);
     GConfig->Flush(false, Ini);
 }
 
@@ -82,7 +85,33 @@ bool FSeqQueue::RemoveAt(int32 Index)
 {
     if (!Items.IsValidIndex(Index)) return false;
     Items.RemoveAt(Index);
+    if (CurrentIndex == Index)
+    {
+        CurrentIndex = INDEX_NONE;
+    }
+    else if (CurrentIndex > Index)
+    {
+        --CurrentIndex;
+    }
+
+    CurrentIndex = CheckBoundsIndex(CurrentIndex) ? CurrentIndex : INDEX_NONE;
     Save();
     QueueChanged.Broadcast();
     return true;
+}
+
+void FSeqQueue::Clear()
+{
+    Items.Reset();
+    CurrentIndex = INDEX_NONE;
+    Save();
+    QueueChanged.Broadcast();
+}
+
+void FSeqQueue::SetCurrentIndex(int32 NewIndex)
+{
+    // Check if NewIndex is in range. We set INDEX_NONE if not valid.
+    CurrentIndex = CheckBoundsIndex(NewIndex) ? NewIndex : INDEX_NONE;
+    Save();
+    QueueChanged.Broadcast();
 }
