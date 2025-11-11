@@ -51,8 +51,6 @@ private:
     TArray<TSharedPtr<FQueuedAnim>> Rows;
     TSharedPtr<SListView<TSharedPtr<FQueuedAnim>>> ListView;
 
-    int32 CurrentIndex = INDEX_NONE;
-
     TSoftObjectPtr<USkeletalMesh> SelectedMesh;
     TSoftObjectPtr<UObject> SelectedRig;
 
