@@ -5,6 +5,7 @@
 #include "Widgets/Views/SListView.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/Notifications/SProgressBar.h"
 #include "Styling/StyleColors.h"
 #include "ContentBrowserModule.h"
 #include "IContentBrowserSingleton.h"
@@ -144,6 +145,7 @@ void SEditingSessionWindow::Construct(const FArguments&)
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildSelectionAndStatusGrid()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildQueueControlsSection()]
                         + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildSessionControlsRow()]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[BuildProgressBarSection()]
                         + SVerticalBox::Slot()
                         .AutoHeight()
                         .Padding(0, 0, 0, 8)
@@ -373,6 +375,51 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
         ];
 }
 
+TSharedRef<SWidget> SEditingSessionWindow::BuildProgressBarSection()
+{
+    return SNew(SBorder)
+        .Padding(FMargin(8, 6))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        [
+            SNew(SVerticalBox)
+
+            + SVerticalBox::Slot()
+            .AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 4)
+            [
+                SNew(STextBlock)
+                .Text(FText::FromString(TEXT("Session Progress")))
+                .Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+            ]
+
+            + SVerticalBox::Slot()
+            .AutoHeight().Padding(0, 0, 0, 8)
+            [
+                SNew(SSeparator).Thickness(4.0f)
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight().HAlign(HAlign_Center).Padding(0, 4, 0, 4)
+            [
+                SNew(SBox)
+                    .WidthOverride(220.f)
+                    .HeightOverride(8.f)
+                    [
+                        SNew(SProgressBar)
+                            .Percent(
+                                TAttribute<TOptional<float>>::Create(
+                                    TAttribute<TOptional<float>>::FGetter::CreateLambda([]() -> TOptional<float>
+                                        {
+                                            const int32 Total = FSeqQueue::Get().GetAll().Num();
+                                            const int32 Processed = FSeqQueue::Get().GetProcessedCount();
+                                            if (Total <= 0) { return TOptional<float>(); }
+                                            return float(FMath::Clamp(Processed, 0, Total)) / float(Total);
+                                        })
+                                )
+                            )
+                    ]
+            ]
+        ];
+}
+
 TSharedRef<SWidget> SEditingSessionWindow::BuildQueueList()
 {
     return SAssignNew(ListView, SListView<TSharedPtr<FQueuedAnim>>)
@@ -527,6 +574,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                             {
                                 UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("False"));
                                 UEditorAssetLibrary::SaveLoadedAsset(Asset);
+                                FSeqQueue::Get().RefreshProcessedCount(); // Update progress bar
                                 RefreshQueue();
                             }
                         }

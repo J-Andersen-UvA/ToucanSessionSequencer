@@ -5,7 +5,7 @@
 struct FQueuedAnim
 {
     FSoftObjectPath Path;
-    FText           DisplayName; // nice name for UI
+    FText DisplayName; // nice name for UI
 
     bool operator==(const FQueuedAnim& Other) const
     { return Path == Other.Path; }
@@ -42,9 +42,14 @@ public:
 
     int32 GetCurrentIndex() const { return CurrentIndex; }
     void SetCurrentIndex(int32 NewIndex);
+
+    int32 GetTotalCount() const { return Items.Num(); }
+    int32 GetProcessedCount();
+    void RefreshProcessedCount(); // Call this after marking animations as processed
     
 private:
     int32 CurrentIndex = INDEX_NONE;
+    mutable int32 CachedProcessedCount = -1; // -1 means invalid cache
     FSeqQueue() { Load(); }
 
     bool CheckBoundsIndex(int32 Index) const { return Index >= 0 && Index < Items.Num(); }

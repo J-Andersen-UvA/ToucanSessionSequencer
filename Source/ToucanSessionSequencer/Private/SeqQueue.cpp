@@ -1,6 +1,7 @@
 #include "SeqQueue.h"
 #include "Misc/ConfigCacheIni.h"
 #include "AssetRegistry/AssetData.h"
+#include "EditorAssetLibrary.h"
 
 void FSeqQueue::Load()
 {
@@ -24,6 +25,8 @@ void FSeqQueue::Load()
         Q.DisplayName = FText::FromString(P.GetAssetName());
         Items.Add(MoveTemp(Q));
     }
+    
+    CachedProcessedCount = -1; // Invalidate cache on load
 }
 
 void FSeqQueue::Save() const
@@ -64,6 +67,7 @@ void FSeqQueue::Add(const FAssetData& A)
     if (!Items.Contains(Q))
     {
         Items.Add(MoveTemp(Q));
+        CachedProcessedCount = -1; // Invalidate cache
         Save();
         QueueChanged.Broadcast();
     }
@@ -76,6 +80,7 @@ void FSeqQueue::AddPath(const FSoftObjectPath& P, const FText& Nice)
     if (!Items.Contains(Q))
     {
         Items.Add(MoveTemp(Q));
+        CachedProcessedCount = -1; // Invalidate cache
         Save();
         QueueChanged.Broadcast();
     }
@@ -95,6 +100,7 @@ bool FSeqQueue::RemoveAt(int32 Index)
     }
 
     CurrentIndex = CheckBoundsIndex(CurrentIndex) ? CurrentIndex : INDEX_NONE;
+    CachedProcessedCount = -1; // Invalidate cache
     Save();
     QueueChanged.Broadcast();
     return true;
@@ -104,6 +110,7 @@ void FSeqQueue::Clear()
 {
     Items.Reset();
     CurrentIndex = INDEX_NONE;
+    CachedProcessedCount = 0; // Empty queue = 0 processed
     Save();
     QueueChanged.Broadcast();
 }
@@ -114,4 +121,34 @@ void FSeqQueue::SetCurrentIndex(int32 NewIndex)
     CurrentIndex = CheckBoundsIndex(NewIndex) ? NewIndex : INDEX_NONE;
     Save();
     QueueChanged.Broadcast();
+}
+
+int32 FSeqQueue::GetProcessedCount()
+{
+    // Return cached value if valid
+    if (CachedProcessedCount >= 0)
+    {
+        return CachedProcessedCount;
+    }
+
+    // Cache is invalid, recalculate
+    int32 Count = 0;
+    for (const FQueuedAnim& Item : Items)
+    {
+        UObject* Asset = Item.Path.TryLoad();
+        if (Asset && UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True"))
+        {
+            ++Count;
+        }
+    }
+    
+    CachedProcessedCount = Count;
+    return Count;
+}
+
+void FSeqQueue::RefreshProcessedCount()
+{
+    // Invalidate cache to force recalculation on next GetProcessedCount()
+    CachedProcessedCount = -1;
+    QueueChanged.Broadcast(); // Trigger UI refresh
 }
