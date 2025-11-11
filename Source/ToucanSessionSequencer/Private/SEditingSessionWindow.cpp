@@ -158,7 +158,7 @@ void SEditingSessionWindow::Construct(const FArguments&)
                                         [
                                             AddIconAndTextHere(TEXT("queueClipboardWhite"), TEXT("Queue:"), true)
                                         ]
-                                        + SVerticalBox::Slot().FillHeight(1.f)
+                                        + SVerticalBox::Slot().FillHeight(1.f).MaxHeight(400.f)
                                         [
                                             BuildQueueList()
                                         ]
@@ -395,6 +395,25 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildProgressBarSection()
             .AutoHeight().Padding(0, 0, 0, 8)
             [
                 SNew(SSeparator).Thickness(4.0f)
+            ]
+            + SVerticalBox::Slot()
+            .AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 8)
+            [
+                SNew(STextBlock)
+                    .Text_Lambda([]() -> FText
+                        {
+                            const int32 Total = FSeqQueue::Get().GetAll().Num();
+                            const int32 Processed = FSeqQueue::Get().GetProcessedCount();
+                            const int32 Index = FSeqQueue::Get().GetCurrentIndex();
+
+                            return FText::Format(
+                                NSLOCTEXT("ToucanSessionSequencer", "SessHdr",
+                                    "processed: {0}/{1}  idx:{2}"),
+                                FText::AsNumber(Processed),
+                                FText::AsNumber(Total),
+                                FText::AsNumber(Index + 1)
+                            );
+                        })
             ]
             + SVerticalBox::Slot()
             .AutoHeight().HAlign(HAlign_Center).Padding(0, 4, 0, 4)
