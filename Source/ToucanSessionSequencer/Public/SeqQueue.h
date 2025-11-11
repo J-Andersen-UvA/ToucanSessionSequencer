@@ -15,6 +15,7 @@ namespace SeqCfg
 {
     inline constexpr const TCHAR* Section = TEXT("ToucanSequencer");
     inline constexpr const TCHAR* Key     = TEXT("Queue"); // array of soft paths
+    inline constexpr const TCHAR* CurrentIndexKey = TEXT("CurrentIndex");
 }
 
 /** Tiny, editor-only, in-memory queue with config persistence */
@@ -33,14 +34,20 @@ public:
     void Load();
     void Save() const;
 
-    void Clear() { Items.Reset(); Save(); QueueChanged.Broadcast(); }
+    void Clear();
     void Add(const FAssetData& A);
     void AddPath(const FSoftObjectPath& P, const FText& Nice);
     bool RemoveAt(int32 Index);
     const TArray<FQueuedAnim>& GetAll() const { return Items; }
 
+    int32 GetCurrentIndex() const { return CurrentIndex; }
+    void SetCurrentIndex(int32 NewIndex);
+    
 private:
+    int32 CurrentIndex = INDEX_NONE;
     FSeqQueue() { Load(); }
+
+    bool CheckBoundsIndex(int32 Index) const { return Index >= 0 && Index < Items.Num(); }
 
     static FText MakeDisplayName(const FAssetData& A);
 

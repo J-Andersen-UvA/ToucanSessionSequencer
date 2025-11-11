@@ -230,7 +230,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                     })
                         ]
 
-                    // Row 2 — Output Folder
+                    // Row 2 ï¿½ Output Folder
                     + SGridPanel::Slot(0, 2).Padding(0, 2, 4, 0)
                         [
                             SNew(SButton)
@@ -444,13 +444,13 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                         .Text(FText::FromString(TEXT("->")))
                         .IsEnabled_Lambda([this, Item]() {
                         int32 RowIndex = Rows.IndexOfByKey(Item);
-                        return RowIndex != CurrentIndex; // disable for current
+                        return RowIndex != FSeqQueue::Get().GetCurrentIndex(); // disable for current
                             })
                         .OnClicked_Lambda([this, Item]() {
                         int32 RowIndex = Rows.IndexOfByKey(Item);
                         if (RowIndex != INDEX_NONE)
                         {
-                            CurrentIndex = RowIndex;
+                            FSeqQueue::Get().SetCurrentIndex(RowIndex);
                             LoadAnimationAtIndex(RowIndex);
                             RefreshQueue();
                         }
@@ -478,7 +478,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                                 Label += TEXT(" (Already processed?)");
                         }
 
-                        if (RowIndex == CurrentIndex)
+                        if (RowIndex == FSeqQueue::Get().GetCurrentIndex())
                             Label += TEXT("  <-- editing");
 
                         return FText::FromString(Label);
@@ -488,7 +488,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                             return FLinearColor::White;
 
                         int32 RowIndex = Rows.IndexOfByKey(Item);
-                        if (RowIndex == CurrentIndex)
+                        if (RowIndex == FSeqQueue::Get().GetCurrentIndex())
                             return FLinearColor(0.2f, 0.4f, 1.0f); // blue highlight
 
                         UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
@@ -652,10 +652,10 @@ FReply SEditingSessionWindow::OnSelectOutputFolder()
 FReply SEditingSessionWindow::OnBakeSaveAnimation()
 {
     const auto& All = FSeqQueue::Get().GetAll();
-    if (!All.IsValidIndex(CurrentIndex))
+    if (!All.IsValidIndex(FSeqQueue::Get().GetCurrentIndex()))
         return FReply::Handled();
 
-    const FQueuedAnim& CurrentAnim = All[CurrentIndex];
+    const FQueuedAnim& CurrentAnim = All[FSeqQueue::Get().GetCurrentIndex()];
     FString SourceAnimPath = CurrentAnim.Path.ToString();
 
     FString AnimName = FPaths::GetBaseFilename(SourceAnimPath);
@@ -671,20 +671,20 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         return FReply::Handled();
 
     // Determine next index
-    if (CurrentIndex == INDEX_NONE)
-        CurrentIndex = 0;
+    if (FSeqQueue::Get().GetCurrentIndex() == INDEX_NONE)
+        FSeqQueue::Get().SetCurrentIndex(0);
     else
-        CurrentIndex = (CurrentIndex + 1) % All.Num();
+        FSeqQueue::Get().SetCurrentIndex((FSeqQueue::Get().GetCurrentIndex() + 1) % All.Num());
 
     if (ListView.IsValid())
         ListView->RebuildList();
 
     // Load animation asset
-    UObject* AnimObject = All[CurrentIndex].Path.TryLoad();
+    UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
     if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
     {
         const FString AnimName = AnimObject->GetName();
-        const FString AnimPath = All[CurrentIndex].Path.ToString();
+        const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
 
         const FText Title = FText::FromString(TEXT("Processed Animation Detected"));
         
@@ -723,12 +723,12 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     if (!All.IsValidIndex(TargetIndex))
         return;
 
-    CurrentIndex = TargetIndex;
+    FSeqQueue::Get().SetCurrentIndex(TargetIndex);
 
     if (ListView.IsValid())
         ListView->RebuildList();
 
-    UObject* AnimObject = All[CurrentIndex].Path.TryLoad();
+    UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
     if (!AnimObject)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation at index %d."), TargetIndex);
@@ -739,7 +739,7 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
     {
         const FString AnimName = AnimObject->GetName();
-        const FString AnimPath = All[CurrentIndex].Path.ToString();
+        const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
 
         const FText Title = FText::FromString(TEXT("Processed Animation Detected"));
         const FText Message = FText::Format(
@@ -767,5 +767,5 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
 
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
 
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), TargetIndex, *Anim->GetName());
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), FSeqQueue::Get().GetCurrentIndex(), *Anim->GetName());
 }
