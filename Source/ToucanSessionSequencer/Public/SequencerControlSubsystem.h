@@ -32,6 +32,8 @@ public:
     static void PlaySequencer(bool bPlay);
     static void KeyframeAllRigControlsToZero();
     static void KeyframeLastTouchedControls();
+    static void SetStartTimeToCurrent();
+    static void SetEndTimeToCurrent();
 
     // --- Utility for state tracking ---
     static void SetLastTouchedControls(const TArray<FName>& ControlNames);
@@ -49,6 +51,9 @@ public:
     static void OnMidi_KeyframeLastTouched(const FMidiControlValue& V);
     static void OnMidi_SmallStepButton(const FMidiControlValue& V);
     static void OnMidi_LargeStepButton(const FMidiControlValue& V);
+    static void OnMidi_SetStartTime(const FMidiControlValue& V);
+    static void OnMidi_SetEndTime(const FMidiControlValue& V);
+
 
 private:
     static float lastTimeStep;
