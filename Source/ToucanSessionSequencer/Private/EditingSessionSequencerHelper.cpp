@@ -28,6 +28,7 @@
 #include "LevelSequencePlayer.h"
 #include "LevelSequenceActor.h"
 #include "MovieSceneSequencePlayer.h"
+#include "Sequencer/MovieSceneControlRigParameterTrack.h"
 #include "Runtime/Launch/Resources/Version.h"
 
 TWeakObjectPtr<ULevelSequence> FEditingSessionSequencerHelper::ActiveSequence;
@@ -83,6 +84,8 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         EditorSubsystem->OpenEditorForAsset(LevelSequence);
         setLooping(LevelSequence);
     }
+
+    RemoveRigFromSequence(LevelSequence);
 
     // Get current editor world
     UWorld* World = GEditor->GetEditorWorldContext().World();
@@ -616,6 +619,37 @@ UControlRig* FEditingSessionSequencerHelper::GetActiveRig()
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] ActiveRig is null"));
     }
     return Rig;
+}
+
+void FEditingSessionSequencerHelper::RemoveRigFromSequence(ULevelSequence* LevelSequence)
+{
+    if (!LevelSequence)
+        return;
+
+    UMovieScene* MovieScene = LevelSequence->GetMovieScene();
+    if (!MovieScene)
+        return;
+
+    TArray<UMovieSceneTrack*> TracksToRemove;
+
+    // Gather all ControlRig parameter tracks
+    for (FMovieSceneBinding& Binding : MovieScene->GetBindings())
+    {
+        for (UMovieSceneTrack* Track : Binding.GetTracks())
+        {
+            if (Track && Track->IsA<UMovieSceneControlRigParameterTrack>())
+            {
+                TracksToRemove.Add(Track);
+            }
+        }
+    }
+
+    for (UMovieSceneTrack* Track : TracksToRemove)
+    {
+        MovieScene->RemoveTrack(*Track);
+    }
+
+    ActiveRig = nullptr;
 }
 
 void FEditingSessionSequencerHelper::BakeAndSave() { /* call OnBakeSaveAnimation on current session */ }
