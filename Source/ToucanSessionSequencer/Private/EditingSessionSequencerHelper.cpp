@@ -28,6 +28,7 @@
 #include "LevelSequencePlayer.h"
 #include "LevelSequenceActor.h"
 #include "MovieSceneSequencePlayer.h"
+#include "Runtime/Launch/Resources/Version.h"
 
 TWeakObjectPtr<ULevelSequence> FEditingSessionSequencerHelper::ActiveSequence;
 TWeakObjectPtr<USkeletalMeshComponent> FEditingSessionSequencerHelper::ActiveSkeletalMeshComponent;
@@ -583,7 +584,9 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     FAnimExportSequenceParameters Params;
     Params.MovieSceneSequence = Sequence;
     Params.RootMovieSceneSequence = Sequence;
+#if (ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7)
     Params.bForceUseOfMovieScenePlaybackRange = true;
+#endif
     Params.Player = TempPlayer;
 
     // Use MovieSceneToolHelpers to bake keys into the anim sequence

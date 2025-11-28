@@ -5,6 +5,8 @@
 
 #include "ISequencer.h"
 #include "ISequencerModule.h"
+#include "ControlRigSequencerEditorLibrary.h"
+#include "Misc/QualifiedFrameTime.h"
 #include "LevelSequence.h"
 #include "ILevelSequenceEditorToolkit.h"
 #include "LevelEditor.h"
@@ -92,7 +94,7 @@ UControlRig* USequencerControlSubsystem::GetBoundRigFromSequencer(
         return nullptr;
     }
 
-    UMovieScene* Scene = Sequence->GetMovieScene();
+    const UMovieScene* Scene = Sequence->GetMovieScene();
     if (!Scene)
     {
         UE_LOG(LogTemp, Warning, TEXT("GetBoundRigFromSequencer: MovieScene is null"));
@@ -114,13 +116,14 @@ UControlRig* USequencerControlSubsystem::GetBoundRigFromSequencer(
     // Iterate all possessables and spawnables; these hold live bindings to runtime objects
     const FMovieSceneRootEvaluationTemplateInstance& RootTemplate = Sequencer->GetEvaluationTemplate();
     const FMovieSceneSequenceID FocusedID = Sequencer->GetFocusedTemplateID();
+    const TArray<FMovieSceneBinding>& Bindings = Scene->GetBindings();
 
-    UE_LOG(LogTemp, Log, TEXT("Scene has %d bindings"), Scene->GetBindings().Num());
-    for (const FMovieSceneBinding& B : Scene->GetBindings())
+    UE_LOG(LogTemp, Log, TEXT("Scene has %d bindings"), Bindings.Num());
+    for (const FMovieSceneBinding& B : Bindings)
     {
         UE_LOG(LogTemp, Log, TEXT("  Binding %s -> %s"), *B.GetName(), *B.GetObjectGuid().ToString());
     }
-    for (const FMovieSceneBinding& Binding : Scene->GetBindings())
+    for (const FMovieSceneBinding& Binding : Bindings)
     {
         const FGuid ObjectGuid = Binding.GetObjectGuid();
 
@@ -152,7 +155,7 @@ UControlRig* USequencerControlSubsystem::GetBoundRigFromSequencer(
     UE_LOG(LogTemp, Warning, TEXT("GetBoundRigFromSequencer: No active rig instance found for '%s'"), *RigName);
 
     // fallback: find active ControlRig instance for the track
-    for (const FMovieSceneBinding& Binding : Scene->GetBindings())
+    for (const FMovieSceneBinding& Binding : Bindings)
     {
         for (UMovieSceneTrack* Track : Binding.GetTracks())
         {
@@ -217,7 +220,140 @@ void USequencerControlSubsystem::PlaySequencer(bool bPlay)
         Seq->SetPlaybackStatus(bPlay ? EMovieScenePlayerStatus::Playing : EMovieScenePlayerStatus::Stopped);
 }
 
-void USequencerControlSubsystem::KeyframeAllRigControlsToZero() {}
+void USequencerControlSubsystem::KeyframeAllRigControlsToZero()
+{
+    UMovieSceneSequence* Sequence = GetCurrentSequence();
+    if (!Sequence)
+        return;
+
+    ISequencer* Sequencer = GetCurrentOpenSequencer();
+    if (!Sequencer)
+        return;
+
+    UMovieScene* MovieScene = Sequence->GetMovieScene();
+    if (!MovieScene)
+        return;
+
+    const int32 Frame = GetCurrentTimeInFrames();
+    const FFrameNumber FrameNum(Frame);
+
+    // Look for all ControlRig tracks in the sequence
+    for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+    {
+        for (UMovieSceneTrack* Track : Binding.GetTracks())
+        {
+            auto* CRTrack = Cast<UMovieSceneControlRigParameterTrack>(Track);
+            if (!CRTrack)
+                continue;
+
+            FString RigName = CRTrack->GetTrackName().ToString();
+
+            UControlRig* Rig = GetBoundRigFromSequencer(Sequence, RigName);
+            if (!Rig || !Rig->IsValidLowLevel())
+                continue;
+
+            URigHierarchy* Hier = Rig->GetHierarchy();
+            if (!Hier)
+                continue;
+
+            const TArray<FRigControlElement*>& Controls = Hier->GetControls();
+            if (Controls.IsEmpty())
+                continue;
+
+            // ------------------------------------------------------------
+            // Zero controls
+            // ------------------------------------------------------------
+            FTransform T = FTransform::Identity;
+            T.SetTranslation(FVector::ZeroVector);
+            T.SetScale3D(FVector(1.f));
+
+            for (FRigControlElement* C : Controls)
+            {
+                if (!C)
+                    continue;
+
+                const ERigControlType Type = C->Settings.ControlType;
+                const FName Name = C->GetFName();
+
+                switch (Type)
+                {
+                    case ERigControlType::Float:
+                    {
+
+                        UControlRigSequencerEditorLibrary::SetLocalControlRigFloat(
+                            Cast<ULevelSequence>(Sequence),
+                            Rig, Name, FrameNum,
+                            0.f,
+                            EMovieSceneTimeUnit::DisplayRate, true);
+                        break;
+                    }
+                    case ERigControlType::Vector2D:
+                    {
+                        UControlRigSequencerEditorLibrary::SetLocalControlRigVector2D(
+                            Cast<ULevelSequence>(Sequence),
+                            Rig, Name, FrameNum,
+                            FVector2D::ZeroVector,
+                            EMovieSceneTimeUnit::DisplayRate, true);
+                        break;
+                    }
+                    case ERigControlType::Position:
+                    {
+                        UControlRigSequencerEditorLibrary::SetLocalControlRigTransform(
+                            Cast<ULevelSequence>(Sequence),
+                            Rig, Name, FrameNum,
+                            T,
+                            EMovieSceneTimeUnit::DisplayRate, true);
+                        break;
+                    }
+                    case ERigControlType::Scale:
+                    {
+                        UControlRigSequencerEditorLibrary::SetLocalControlRigTransform(
+                            Cast<ULevelSequence>(Sequence),
+                            Rig, Name, FrameNum,
+                            T,
+                            EMovieSceneTimeUnit::DisplayRate, true);
+                        break;
+                    }
+                    case ERigControlType::Rotator:
+                    {
+                        UControlRigSequencerEditorLibrary::SetLocalControlRigRotator(
+                            Cast<ULevelSequence>(Sequence),
+                            Rig, Name, FrameNum,
+                            FRotator::ZeroRotator,
+                            EMovieSceneTimeUnit::DisplayRate, true);
+                        break;
+                    }
+                    case ERigControlType::Transform:
+                    case ERigControlType::EulerTransform:
+                    {
+                        FEulerTransform Euler =
+                            UControlRigSequencerEditorLibrary::GetLocalControlRigEulerTransform(
+                                Cast<ULevelSequence>(Sequence),
+                                Rig, Name, FrameNum,
+                                EMovieSceneTimeUnit::DisplayRate);
+
+                        Euler.Location = FVector::ZeroVector;
+                        Euler.Rotation = FRotator::ZeroRotator;
+                        Euler.Scale = FVector::OneVector;
+
+                        UControlRigSequencerEditorLibrary::SetLocalControlRigEulerTransform(
+                            Cast<ULevelSequence>(Sequence),
+                            Rig, Name, FrameNum,
+                            Euler,
+                            EMovieSceneTimeUnit::DisplayRate, true);
+                        break;
+                    }
+
+                    case ERigControlType::Bool:
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 void USequencerControlSubsystem::KeyframeLastTouchedControls() {}
 
 void USequencerControlSubsystem::SetLastTouchedControls(const TArray<FName>& ControlNames)
