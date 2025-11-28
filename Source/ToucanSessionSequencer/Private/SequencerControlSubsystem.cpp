@@ -371,6 +371,58 @@ void USequencerControlSubsystem::ClearLastTouchedControls()
     LastTouchedControls.Reset();
 }
 
+void USequencerControlSubsystem::SetStartTimeToCurrent()
+{
+    UMovieSceneSequence* Sequence = GetCurrentSequence();
+    if (!Sequence)
+        return;
+
+    UMovieScene* Scene = Sequence->GetMovieScene();
+    if (!Scene)
+        return;
+
+    const FFrameNumber Current = FFrameNumber(GetCurrentTimeInFrames());
+    const FFrameNumber End = Scene->GetPlaybackRange().GetUpperBoundValue();
+
+    if (Current < End)
+    {
+        TRange<FFrameNumber> NewRange(
+            TRangeBound<FFrameNumber>::Inclusive(Current),
+            TRangeBound<FFrameNumber>::Inclusive(End)
+        );
+
+        Scene->SetPlaybackRange(NewRange);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("Set Start Time = %d"), Current.Value);
+}
+
+void USequencerControlSubsystem::SetEndTimeToCurrent()
+{
+    UMovieSceneSequence* Sequence = GetCurrentSequence();
+    if (!Sequence)
+        return;
+
+    UMovieScene* Scene = Sequence->GetMovieScene();
+    if (!Scene)
+        return;
+
+    const FFrameNumber Current = FFrameNumber(GetCurrentTimeInFrames());
+    const FFrameNumber Start = Scene->GetPlaybackRange().GetLowerBoundValue();
+
+    if (Current > Start)
+    {
+        TRange<FFrameNumber> NewRange(
+            TRangeBound<FFrameNumber>::Inclusive(Start),
+            TRangeBound<FFrameNumber>::Inclusive(Current)
+        );
+
+        Scene->SetPlaybackRange(NewRange);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("Set End Time = %d"), Current.Value);
+}
+
 void USequencerControlSubsystem::RegisterSequencerMidiFunctions()
 {
 #if WITH_MIDIMAPPER
@@ -393,6 +445,8 @@ void USequencerControlSubsystem::RegisterSequencerMidiFunctions()
         Bind(TEXT("Seq.KeyframeLastTouched"), &USequencerControlSubsystem::OnMidi_KeyframeLastTouched);
         Bind(TEXT("Seq.SmallStepButton"), &USequencerControlSubsystem::OnMidi_SmallStepButton);
         Bind(TEXT("Seq.LargeStepButton"), &USequencerControlSubsystem::OnMidi_LargeStepButton);
+        Bind(TEXT("Seq.SetStartTime"), &USequencerControlSubsystem::OnMidi_SetStartTime);
+        Bind(TEXT("Seq.SetEndTime"), &USequencerControlSubsystem::OnMidi_SetEndTime);
 
         UE_LOG(LogTemp, Log, TEXT("Registered global Sequencer MIDI functions"));
     }
@@ -471,4 +525,16 @@ void USequencerControlSubsystem::OnMidi_KeyframeLastTouched(const FMidiControlVa
 {
     if (V.Value > 0.5f)
         KeyframeLastTouchedControls();
+}
+
+void USequencerControlSubsystem::OnMidi_SetStartTime(const FMidiControlValue& V)
+{
+    if (V.Value > 0.5f)
+        SetStartTimeToCurrent();
+}
+
+void USequencerControlSubsystem::OnMidi_SetEndTime(const FMidiControlValue& V)
+{
+    if (V.Value > 0.5f)
+        SetEndTimeToCurrent();
 }
