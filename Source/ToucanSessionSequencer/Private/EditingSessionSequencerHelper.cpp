@@ -1,4 +1,4 @@
-#include "EditingSessionSequencerHelper.h"
+﻿#include "EditingSessionSequencerHelper.h"
 #include "Animation/SkeletalMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -29,6 +29,8 @@
 #include "LevelSequenceActor.h"
 #include "MovieSceneSequencePlayer.h"
 #include "Sequencer/MovieSceneControlRigParameterTrack.h"
+#include "MovieSceneSequenceID.h"
+#include "Animation/AnimationSettings.h"
 #include "Runtime/Launch/Resources/Version.h"
 
 TWeakObjectPtr<ULevelSequence> FEditingSessionSequencerHelper::ActiveSequence;
@@ -518,8 +520,8 @@ USkeletalMeshComponent* FEditingSessionSequencerHelper::GetActiveSkeletalMeshCom
 
 void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath)
 {
-    // 1. Get current sequence
 #if WITH_EDITOR
+    // Active sequence
     ULevelSequence* Sequence = FEditingSessionSequencerHelper::GetActiveSequence();
     if (!Sequence)
     {
@@ -534,6 +536,30 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
         return;
     }
 
+    // Get the editor Sequencer that is editing this LevelSequence
+    UAssetEditorSubsystem* EditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+    if (!EditorSubsystem)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No AssetEditorSubsystem available."));
+        return;
+    }
+
+    IAssetEditorInstance* EditorInstance = EditorSubsystem->FindEditorForAsset(Sequence, /*bFocusIfOpen*/false);
+    ILevelSequenceEditorToolkit* Toolkit = static_cast<ILevelSequenceEditorToolkit*>(EditorInstance);
+    if (!Toolkit)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Level Sequence editor is not open for the active sequence."));
+        return;
+    }
+
+    TSharedPtr<ISequencer> EditorSequencer = Toolkit->GetSequencer();
+    if (!EditorSequencer.IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to get ISequencer for active sequence."));
+        return;
+    }
+
+    // Skeletal mesh component currently driven by this sequence
     USkeletalMeshComponent* SkelComp = GetActiveSkeletalMeshComponent();
     if (!SkelComp)
     {
@@ -551,9 +577,28 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
         return;
     }
 
-    FString Folder = FOutputHelper::EnsureDatedSubfolder();
+    // Make the new anim use the same rate as the sequence (24 fps in your case)
+    UAnimationSettings* AnimSettings = UAnimationSettings::Get();
+    const FFrameRate OriginalRate = AnimSettings->DefaultFrameRate;
+    if (UMovieScene* MovieScene = Sequence->GetMovieScene())
+    {
+        const FFrameRate SeqRate = MovieScene->GetDisplayRate();
 
-    // Create AnimSequence asset
+        // temporarily set the default frame rate so we dont get the sampling bug for morphtargets
+        AnimSettings->Modify();
+        AnimSettings->DefaultFrameRate = SeqRate;
+        AnimSettings->SaveConfig();
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Temporarily set AnimSettings DefaultFrameRate to %d/%d"),
+            SeqRate.Numerator, SeqRate.Denominator);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Error, TEXT("[ToucanSequencer] MovieScene not found in sequence."));
+    }
+
+    // Create target AnimSequence asset
+    const FString Folder = FOutputHelper::EnsureDatedSubfolder();
+
     FAssetToolsModule& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
     UAnimSequenceFactory* Factory = NewObject<UAnimSequenceFactory>();
     Factory->TargetSkeleton = Skeleton;
@@ -567,32 +612,45 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
         return;
     }
 
-    // make a temporary player for evaluation
-    ALevelSequenceActor* TempActor = nullptr;
-    FMovieSceneSequencePlaybackSettings PlaySettings; // defaults ok
-    ULevelSequencePlayer* TempPlayer =
-        ULevelSequencePlayer::CreateLevelSequencePlayer(World, Sequence, PlaySettings, TempActor);
-
-    if (!TempPlayer || !TempActor)
+    if (!NewAnim)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create LevelSequencePlayer for baking."));
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create AnimSequence asset."));
         return;
     }
 
+    // Export options: transforms + morph targets
     UAnimSeqExportOption* ExportOptions = NewObject<UAnimSeqExportOption>(GetTransientPackage());
     ExportOptions->bExportTransforms = true;
     ExportOptions->bExportMorphTargets = true;
-    ExportOptions->bExportAttributeCurves = false;
+    ExportOptions->bExportAttributeCurves = true;
+    ExportOptions->bTimecodeRateOverride = false;
+    ExportOptions->bUseCustomFrameRate = false;
+    ExportOptions->bBakeTimecode = false;
 
+    // Use the active editor Sequencer (IMovieScenePlayer) for evaluation
     FAnimExportSequenceParameters Params;
     Params.MovieSceneSequence = Sequence;
     Params.RootMovieSceneSequence = Sequence;
+
 #if (ENGINE_MAJOR_VERSION >= 5 && ENGINE_MINOR_VERSION >= 7)
     Params.bForceUseOfMovieScenePlaybackRange = true;
 #endif
-    Params.Player = TempPlayer;
+    Params.Player = EditorSequencer.Get();    // ISequencer : IMovieScenePlayer
 
-    // Use MovieSceneToolHelpers to bake keys into the anim sequence
+    if (SkelComp->GetSkeletalMeshAsset()->GetMorphTargets().Num() < 0)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[ToucanSequencer] NO morphs found in the skelmeshasset!"));
+    }
+
+    FFrameNumber StartFrame = Sequence->GetMovieScene()->GetPlaybackRange().GetLowerBoundValue();
+    EditorSequencer->SetGlobalTime(StartFrame);
+    EditorSequencer->ForceEvaluate();
+
+    SkelComp->TickComponent(0.f, LEVELTICK_All, nullptr);
+    SkelComp->RefreshBoneTransforms();
+    SkelComp->FinalizeBoneTransform();
+
+    // Bake keys (including morph targets) into the AnimSequence
     if (MovieSceneToolHelpers::ExportToAnimSequence(NewAnim, ExportOptions, Params, SkelComp))
     {
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked and saved animation: %s"), *NewAnim->GetPathName());
@@ -602,9 +660,11 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Bake failed for sequence: %s"), *Sequence->GetName());
     }
-
-    if (TempActor) { TempActor->Destroy(); }
-#endif
+    
+    AnimSettings->DefaultFrameRate = OriginalRate;
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Restored AnimSettings DefaultFrameRate to %d/%d"),
+        OriginalRate.Numerator, OriginalRate.Denominator);
+#endif // WITH_EDITOR
 }
 
 UControlRig* FEditingSessionSequencerHelper::GetActiveRig()
