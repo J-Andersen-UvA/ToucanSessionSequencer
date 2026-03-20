@@ -45,6 +45,10 @@ private:
     FReply OnBakeSaveAnimation();
     FReply OnLoadNextAnimation();
 
+    FString GetCurrentConfiguredOutputFolder() const;
+    void ExportAnimSequencesToFolder(const FString& sourceContentFolder, const FString& outputDiskFolder) const;
+    FReply OnExportFolder();
+
     void LoadAnimationAtIndex(int32 TargetIndex);
 
 private:

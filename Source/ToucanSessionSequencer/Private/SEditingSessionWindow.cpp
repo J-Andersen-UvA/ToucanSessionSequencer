@@ -18,6 +18,16 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "QueueControls.h"
 #include "Misc/CoreDelegates.h"
+#include "DesktopPlatformModule.h"
+#include "IDesktopPlatform.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Misc/Paths.h"
+#include "HAL/FileManager.h"
+#include "AssetExportTask.h"
+#include "Exporters/Exporter.h"
+#include "Exporters/AnimSequenceExporterFBX.h"
+#include "Exporters/FbxExportOption.h"
+#include "Animation/AnimSequence.h"
 #include "EditingSessionDelegates.h"
 
 TSharedRef<SWidget> SEditingSessionWindow::AddIconHere(const FString& IconName, const FVector2D& Size)
@@ -369,6 +379,14 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
                                 [
                                     AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Animation"), false, true)
+                                ]
+                        ]
+                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                        [
+                            SNew(SButton)
+                                .OnClicked(this, &SEditingSessionWindow::OnExportFolder)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Export Anims in Folder To"), false, true)
                                 ]
                         ]
                 ]
@@ -835,4 +853,158 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), FSeqQueue::Get().GetCurrentIndex(), *Anim->GetName());
+}
+
+FString SEditingSessionWindow::GetCurrentConfiguredOutputFolder() const
+{
+    return FOutputHelper::Get();
+}
+
+void SEditingSessionWindow::ExportAnimSequencesToFolder(const FString& sourceContentFolder, const FString& outputDiskFolder) const
+{
+    FARFilter filter;
+    filter.PackagePaths.Add(*sourceContentFolder);
+    filter.bRecursivePaths = true;
+    filter.ClassPaths.Add(UAnimSequence::StaticClass()->GetClassPathName());
+
+    FAssetRegistryModule& assetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+
+    TArray<FAssetData> assetDataList;
+    assetRegistryModule.Get().GetAssets(filter, assetDataList);
+
+    if (assetDataList.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No AnimSequence assets found under %s"), *sourceContentFolder);
+        return;
+    }
+
+    IFileManager::Get().MakeDirectory(*outputDiskFolder, true);
+
+    int32 exportedCount = 0;
+
+    for (const FAssetData& assetData : assetDataList)
+    {
+        UAnimSequence* animSequence = Cast<UAnimSequence>(assetData.GetAsset());
+        if (!animSequence)
+            continue;
+
+        const FString exportFilename = FPaths::Combine(outputDiskFolder, animSequence->GetName() + TEXT(".fbx"));
+
+        UAssetExportTask* exportTask = NewObject<UAssetExportTask>();
+        exportTask->Object = animSequence;
+        exportTask->Filename = exportFilename;
+        exportTask->bSelected = false;
+        exportTask->bReplaceIdentical = true;
+        exportTask->bPrompt = false;
+        exportTask->bAutomated = true;
+        exportTask->bUseFileArchive = false;
+        exportTask->Exporter = NewObject<UAnimSequenceExporterFBX>();
+
+        UFbxExportOption* exportOptions = NewObject<UFbxExportOption>();
+        exportOptions->FbxExportCompatibility = EFbxExportCompatibility::FBX_2020;
+        exportOptions->bASCII = false;
+        exportOptions->bForceFrontXAxis = false;
+        exportOptions->VertexColor = false;
+        exportOptions->LevelOfDetail = false;
+        exportOptions->Collision = false;
+        exportOptions->bExportSourceMesh = false;
+        exportOptions->bExportMorphTargets = true;
+        exportOptions->bExportPreviewMesh = false;
+        exportOptions->MapSkeletalMotionToRoot = false;
+        exportOptions->bExportLocalTime = true;
+        exportTask->Options = exportOptions;
+
+        if (UExporter::RunAssetExportTask(exportTask))
+        {
+            ++exportedCount;
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Exported %s -> %s"), *animSequence->GetPathName(), *exportFilename);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to export %s"), *animSequence->GetPathName());
+        }
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Exported %d animation(s) from %s to %s"), exportedCount, *sourceContentFolder, *outputDiskFolder);
+}
+
+FReply SEditingSessionWindow::OnExportFolder()
+{
+    FContentBrowserModule& contentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+    IContentBrowserSingleton& contentBrowser = contentBrowserModule.Get();
+
+    TSharedPtr<FString> pickedContentFolder = MakeShared<FString>(GetCurrentConfiguredOutputFolder());
+
+    FPathPickerConfig pathPickerConfig;
+    pathPickerConfig.DefaultPath = GetCurrentConfiguredOutputFolder();
+    pathPickerConfig.bAllowContextMenu = true;
+    pathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([pickedContentFolder](const FString& selectedPath)
+    {
+        *pickedContentFolder = selectedPath;
+    });
+
+    TSharedRef<SWindow> pickerWindow = SNew(SWindow)
+        .Title(FText::FromString(TEXT("Select Source Animation Folder")))
+        .ClientSize(FVector2D(450, 400))
+        .SupportsMinimize(false)
+        .SupportsMaximize(false);
+
+    pickerWindow->SetContent(
+        SNew(SVerticalBox)
+        + SVerticalBox::Slot().FillHeight(1.f)
+        [
+            contentBrowser.CreatePathPicker(pathPickerConfig)
+        ]
+        + SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot().AutoWidth()
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("OK")))
+                .OnClicked_Lambda([this, pickerWindow, pickedContentFolder]()
+                {
+                    const FString sourceContentFolder = *pickedContentFolder;
+                    pickerWindow->RequestDestroyWindow();
+
+                    if (sourceContentFolder.IsEmpty())
+                        return FReply::Handled();
+
+                    IDesktopPlatform* desktopPlatform = FDesktopPlatformModule::Get();
+                    if (!desktopPlatform)
+                        return FReply::Handled();
+
+                    const void* parentWindowHandle = FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr);
+
+                    FString outputDiskFolder;
+                    const bool didChooseDiskFolder = desktopPlatform->OpenDirectoryDialog(
+                        parentWindowHandle,
+                        TEXT("Select FBX Output Folder"),
+                        FPaths::ProjectDir(),
+                        outputDiskFolder
+                    );
+
+                    if (didChooseDiskFolder && !outputDiskFolder.IsEmpty())
+                    {
+                        ExportAnimSequencesToFolder(sourceContentFolder, outputDiskFolder);
+                    }
+
+                    return FReply::Handled();
+                })
+            ]
+            + SHorizontalBox::Slot().AutoWidth().Padding(8, 0, 0, 0)
+            [
+                SNew(SButton)
+                .Text(FText::FromString(TEXT("Cancel")))
+                .OnClicked_Lambda([pickerWindow]()
+                {
+                    pickerWindow->RequestDestroyWindow();
+                    return FReply::Handled();
+                })
+            ]
+        ]
+    );
+
+    FSlateApplication::Get().AddWindow(pickerWindow);
+    return FReply::Handled();
 }
