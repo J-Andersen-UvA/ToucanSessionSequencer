@@ -31,6 +31,12 @@
 #include "Sequencer/MovieSceneControlRigParameterTrack.h"
 #include "MovieSceneSequenceID.h"
 #include "Animation/AnimationSettings.h"
+#include "ToucanBakedAnimMetadata.h"
+
+#if WITH_SEQUENCER_ABSTRACTION
+#include "SequencerAbstractionBPLibrary.h"
+#endif
+
 #include "Runtime/Launch/Resources/Version.h"
 
 TWeakObjectPtr<ULevelSequence> FEditingSessionSequencerHelper::ActiveSequence;
@@ -660,6 +666,19 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Bake failed for sequence: %s"), *Sequence->GetName());
     }
+
+    if (MovieSceneToolHelpers::ExportToAnimSequence(NewAnim, ExportOptions, Params, SkelComp))
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked and saved animation: %s"), *NewAnim->GetPathName());
+
+        CreateOrUpdateBakedAnimMetadata(Sequence, NewAnim, Folder);
+
+        FOutputHelper::MarkAssetAsProcessed(SourceAnimPath);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Bake failed for sequence: %s"), *Sequence->GetName());
+    }
     
     AnimSettings->DefaultFrameRate = OriginalRate;
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Restored AnimSettings DefaultFrameRate to %d/%d"),
@@ -716,3 +735,96 @@ void FEditingSessionSequencerHelper::BakeAndSave() { /* call OnBakeSaveAnimation
 void FEditingSessionSequencerHelper::StepFrames(int32 Frames) { /* advance sequencer timeline */ }
 void FEditingSessionSequencerHelper::KeyAllControls() {}
 void FEditingSessionSequencerHelper::KeyZeroAll() {}
+
+void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
+    ULevelSequence* sequence,
+    UAnimSequence* bakedAnim,
+    const FString& folder)
+{
+#if WITH_EDITOR
+    if (!sequence || !bakedAnim)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Metadata creation skipped: invalid sequence or anim."));
+        return;
+    }
+
+    UMovieScene* movieScene = sequence->GetMovieScene();
+    if (!movieScene)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Metadata creation skipped: MovieScene missing."));
+        return;
+    }
+
+    int32 startTrimFrame = 0;
+    int32 endTrimFrame = 0;
+    bool gotPlaybackRange = false;
+
+#if WITH_SEQUENCER_ABSTRACTION
+    gotPlaybackRange = USequencerAbstractionBPLibrary::GetSequencePlaybackRange(
+        sequence,
+        startTrimFrame,
+        endTrimFrame
+    );
+#endif
+
+    if (!gotPlaybackRange)
+    {
+        const TRange<FFrameNumber> playbackRange = movieScene->GetPlaybackRange();
+        startTrimFrame = playbackRange.GetLowerBoundValue().Value;
+        endTrimFrame = playbackRange.GetUpperBoundValue().Value;
+    }
+
+    const FFrameRate displayRate = movieScene->GetDisplayRate();
+    const int32 fps = displayRate.AsDecimal() > 0.0
+        ? FMath::RoundToInt(displayRate.AsDecimal())
+        : displayRate.Numerator;
+
+    const FString metadataAssetName = bakedAnim->GetName() + TEXT("_Metadata");
+    const FString metadataObjectPath = folder / metadataAssetName;
+
+    UToucanBakedAnimMetadata* metadataAsset = LoadObject<UToucanBakedAnimMetadata>(nullptr, *metadataObjectPath);
+
+    if (!metadataAsset)
+    {
+        FAssetToolsModule& assetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+        metadataAsset = Cast<UToucanBakedAnimMetadata>(
+            assetToolsModule.Get().CreateAsset(
+                metadataAssetName,
+                folder,
+                UToucanBakedAnimMetadata::StaticClass(),
+                nullptr
+            )
+        );
+    }
+
+    if (!metadataAsset)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create metadata asset for %s"), *bakedAnim->GetName());
+        return;
+    }
+
+    metadataAsset->Modify();
+    metadataAsset->fps = fps;
+    metadataAsset->startTrimFrame = startTrimFrame;
+    metadataAsset->endTrimFrame = endTrimFrame;
+    metadataAsset->bakedAnim = bakedAnim;
+    metadataAsset->MarkPackageDirty();
+
+    FAssetRegistryModule::AssetCreated(metadataAsset);
+
+    if (UPackage* package = metadataAsset->GetOutermost())
+    {
+        package->MarkPackageDirty();
+    }
+
+    UE_LOG(
+        LogTemp,
+        Display,
+        TEXT("[ToucanSequencer] Saved metadata asset %s (fps=%d, start=%d, end=%d)"),
+        *metadataAsset->GetPathName(),
+        fps,
+        startTrimFrame,
+        endTrimFrame
+    );
+#endif
+}

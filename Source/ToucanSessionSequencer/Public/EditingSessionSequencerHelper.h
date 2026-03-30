@@ -11,6 +11,7 @@
 class ULevelSequence;
 class ASkeletalMeshActor;
 class UControlRig;
+class UToucanBakedAnimMetadata;
 
 /**
  * Handles loading/creating Level Sequences and populating them
@@ -53,5 +54,13 @@ private:
     static void AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange = true);
     static void AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig);
     static ULevelSequence* CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName);
+
+private:
+    // --- Metadata helpers ---
+    static void CreateOrUpdateBakedAnimMetadata(
+        ULevelSequence* sequence,
+        UAnimSequence* bakedAnim,
+        const FString& folder
+    );
 
 };

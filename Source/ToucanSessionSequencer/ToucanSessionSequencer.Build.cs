@@ -50,5 +50,13 @@ public class ToucanSessionSequencer : ModuleRules
             PrivateDependencyModuleNames.Add("MidiMapper");
             PrivateDependencyModuleNames.Add("MidiMapperEditor");
         }
+
+        bool bHasSequencerAbstraction = Directory.Exists(Path.Combine(ModuleDirectory, "../../../SequencerAbstraction/Source/SequencerAbstraction"));
+        PublicDefinitions.Add("WITH_SEQUENCER_ABSTRACTION=" + (bHasSequencerAbstraction ? "1" : "0"));
+
+        if (bHasSequencerAbstraction)
+        {
+            PrivateDependencyModuleNames.Add("SequencerAbstraction");
+        }
     }
 }
