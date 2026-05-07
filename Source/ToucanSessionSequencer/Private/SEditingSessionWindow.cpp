@@ -142,6 +142,15 @@ TSharedRef<SWidget> SEditingSessionWindow::AddIconAndTextHere(const FString& Ico
     return AddIconAndTextHere(IconName, Text, false);
 }
 
+namespace
+{
+    bool IsQueuedAnimProcessed(const FQueuedAnim& Item)
+    {
+        UObject* Asset = Item.Path.TryLoad();
+        return Asset && UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True");
+    }
+}
+
 void SEditingSessionWindow::Construct(const FArguments&)
 {
     RefreshQueue();
@@ -378,7 +387,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 //.Text(FText::FromString(TEXT("Next Animation")))
                                 .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
                                 [
-                                    AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Animation"), false, true)
+                                    AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Todo"), false, true)
                                 ]
                         ]
                         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
@@ -756,35 +765,51 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         return FReply::Handled();
 
     // Determine next index
-    if (FSeqQueue::Get().GetCurrentIndex() == INDEX_NONE)
-        FSeqQueue::Get().SetCurrentIndex(0);
-    else
-        FSeqQueue::Get().SetCurrentIndex((FSeqQueue::Get().GetCurrentIndex() + 1) % All.Num());
+    const int32 CurrentIndex = FSeqQueue::Get().GetCurrentIndex();
+    const int32 StartIndex = CurrentIndex == INDEX_NONE ? -1 : CurrentIndex;
 
-    if (ListView.IsValid())
-        ListView->RebuildList();
+    int32 NextUnprocessedIndex = INDEX_NONE;
+
+    for (int32 Offset = 1; Offset <= All.Num(); ++Offset)
+    {
+        const int32 CandidateIndex = (StartIndex + Offset + All.Num()) % All.Num();
+
+        if (!IsQueuedAnimProcessed(All[CandidateIndex]))
+        {
+            NextUnprocessedIndex = CandidateIndex;
+            break;
+        }
+    }
+
+    if (NextUnprocessedIndex == INDEX_NONE)
+    {
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::FromString(TEXT("No unprocessed animations found."))
+        );
+        return FReply::Handled();
+    }
+
+    FSeqQueue::Get().SetCurrentIndex(NextUnprocessedIndex);
 
     // Load animation asset
     UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
-    if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
+    
+    // Notify if failed to load
+    if (!AnimObject)
     {
-        const FString AnimName = AnimObject->GetName();
         const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
 
-        const FText Title = FText::FromString(TEXT("Processed Animation Detected"));
-        
-        const FText Message = FText::Format(
-            FText::FromString(TEXT("Animation:\t'{0}'\nPath:\t'{1}'\nNote:\tis marked as 'Processed'.\nAction:\tdo you want to load it anyway?")),
-            FText::FromString(AnimName),
-            FText::FromString(AnimPath)
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::Format(
+                FText::FromString(TEXT("Failed to load animation asset:\n\n{0}\n\nThe queue item may point to a missing or invalid asset.")),
+                FText::FromString(AnimPath)
+            )
         );
 
-        EAppReturnType::Type Response = FMessageDialog::Open(EAppMsgType::YesNo, Message, Title);
-        if (Response == EAppReturnType::No)
-        {
-            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Skipped processed animation: %s"), *AnimPath);
-            return FReply::Handled();
-        }
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation asset: %s"), *AnimPath);
+        return FReply::Handled();
     }
 
     UAnimSequence* Anim = Cast<UAnimSequence>(AnimObject);
@@ -814,9 +839,20 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
         ListView->RebuildList();
 
     UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
+
     if (!AnimObject)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation at index %d."), TargetIndex);
+        const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
+
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::Format(
+                FText::FromString(TEXT("Failed to load animation asset:\n\n{0}\n\nThe queue item may point to a missing or invalid asset.")),
+                FText::FromString(AnimPath)
+            )
+        );
+
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation asset: %s"), *AnimPath);
         return;
     }
 
