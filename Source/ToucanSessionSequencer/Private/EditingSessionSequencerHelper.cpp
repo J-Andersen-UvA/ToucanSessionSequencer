@@ -25,6 +25,7 @@
 #include "MovieSceneSequence.h"
 #include "Exporters/AnimSeqExportOption.h"
 #include "OutputHelper.h"
+#include "Misc/MessageDialog.h"
 #include "LevelSequencePlayer.h"
 #include "LevelSequenceActor.h"
 #include "MovieSceneSequencePlayer.h"
@@ -659,17 +660,29 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     // Bake keys (including morph targets) into the AnimSequence
     if (MovieSceneToolHelpers::ExportToAnimSequence(NewAnim, ExportOptions, Params, SkelComp))
     {
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked and saved animation: %s"), *NewAnim->GetPathName());
-        FOutputHelper::MarkAssetAsProcessed(SourceAnimPath);
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Bake failed for sequence: %s"), *Sequence->GetName());
-    }
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked animation: %s"), *NewAnim->GetPathName());
+        
+        // Save the new asset
+        FAssetRegistryModule::AssetCreated(NewAnim);
+        NewAnim->MarkPackageDirty();
+        const bool bSavedAnim = UEditorAssetLibrary::SaveLoadedAsset(NewAnim, false);
 
-    if (MovieSceneToolHelpers::ExportToAnimSequence(NewAnim, ExportOptions, Params, SkelComp))
-    {
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Baked and saved animation: %s"), *NewAnim->GetPathName());
+        if (bSavedAnim)
+        {
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Saved baked animation asset: %s"), *NewAnim->GetPathName());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[ToucanSequencer] Failed to save baked animation asset: %s"), *NewAnim->GetPathName());
+
+            FMessageDialog::Open(
+                EAppMsgType::Ok,
+                FText::Format(
+                    FText::FromString(TEXT("Bake finished, but Unreal failed to save the baked animation package:\n\n{0}\n\nPlease save it manually before closing or continuing.")),
+                    FText::FromString(NewAnim->GetPathName())
+                )
+            );
+        }
 
         CreateOrUpdateBakedAnimMetadata(Sequence, NewAnim, Folder);
 
@@ -811,20 +824,24 @@ void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
     metadataAsset->MarkPackageDirty();
 
     FAssetRegistryModule::AssetCreated(metadataAsset);
+    const bool bSavedAnimMetadata = UEditorAssetLibrary::SaveLoadedAsset(metadataAsset, false);
 
-    if (UPackage* package = metadataAsset->GetOutermost())
+    if (!bSavedAnimMetadata)
     {
-        package->MarkPackageDirty();
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to save metadata asset: %s"), *metadataAsset->GetPathName());
+    }
+    else
+    {
+        UE_LOG(
+            LogTemp,
+            Display,
+            TEXT("[ToucanSequencer] Saved metadata asset %s (fps=%d, start=%d, end=%d)"),
+            *metadataAsset->GetPathName(),
+            fps,
+            startTrimFrame,
+            endTrimFrame
+        );
     }
 
-    UE_LOG(
-        LogTemp,
-        Display,
-        TEXT("[ToucanSequencer] Saved metadata asset %s (fps=%d, start=%d, end=%d)"),
-        *metadataAsset->GetPathName(),
-        fps,
-        startTrimFrame,
-        endTrimFrame
-    );
 #endif
 }
