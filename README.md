@@ -1,0 +1,1 @@
+The session sequencer is there to control a post processing session. You want to edit a lot of animations without keeping track of what is done and what is to do yourself. Add the relevant avatar and rig to the configuration, add the animations to post process to the queue, and start by using the session actions.
