@@ -18,6 +18,7 @@ The goal is to avoid rebuilding the same Sequencer setup for every clip and to m
 - Snap animation sections to their source timecode when available.
 - Keep the Sequencer view focused on the animation section.
 - Load a reference video for the current animation.
+- Configure a local video folder and automatically match queued animations to video files by name.
 - Bind reference video playback to a MediaPlate so the Sequencer playhead controls it.
 - Align video sections by Unreal source timecode, with `ffprobe` fallback.
 - Generate cached 1080 video proxies for heavy source videos to improve editor playback.

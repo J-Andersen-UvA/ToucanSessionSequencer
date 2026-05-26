@@ -149,6 +149,71 @@ namespace
         UObject* Asset = Item.Path.TryLoad();
         return Asset && UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True");
     }
+
+    FString NormalizeMatchString(const FString& InString)
+    {
+        FString Out;
+        Out.Reserve(InString.Len());
+        for (TCHAR Char : InString)
+        {
+            if (FChar::IsAlnum(Char))
+            {
+                Out.AppendChar(FChar::ToLower(Char));
+            }
+        }
+        return Out;
+    }
+
+    int32 LongestCommonSubsequenceLength(const FString& A, const FString& B)
+    {
+        if (A.IsEmpty() || B.IsEmpty())
+        {
+            return 0;
+        }
+
+        TArray<int32> Previous;
+        TArray<int32> Current;
+        Previous.Init(0, B.Len() + 1);
+        Current.Init(0, B.Len() + 1);
+
+        for (int32 AIndex = 1; AIndex <= A.Len(); ++AIndex)
+        {
+            for (int32 BIndex = 1; BIndex <= B.Len(); ++BIndex)
+            {
+                if (A[AIndex - 1] == B[BIndex - 1])
+                {
+                    Current[BIndex] = Previous[BIndex - 1] + 1;
+                }
+                else
+                {
+                    Current[BIndex] = FMath::Max(Previous[BIndex], Current[BIndex - 1]);
+                }
+            }
+            Swap(Previous, Current);
+            Current.Init(0, B.Len() + 1);
+        }
+
+        return Previous[B.Len()];
+    }
+
+    int32 ScoreVideoNameMatch(const FString& QueueName, const FString& VideoName)
+    {
+        const FString NormalizedQueueName = NormalizeMatchString(QueueName);
+        const FString NormalizedVideoName = NormalizeMatchString(VideoName);
+        if (NormalizedQueueName.IsEmpty() || NormalizedVideoName.IsEmpty())
+        {
+            return 0;
+        }
+
+        if (NormalizedVideoName.Contains(NormalizedQueueName) || NormalizedQueueName.Contains(NormalizedVideoName))
+        {
+            return 1000 + FMath::Min(NormalizedQueueName.Len(), NormalizedVideoName.Len());
+        }
+
+        const int32 LcsLength = LongestCommonSubsequenceLength(NormalizedQueueName, NormalizedVideoName);
+        const int32 Denominator = FMath::Max(NormalizedQueueName.Len(), NormalizedVideoName.Len());
+        return Denominator > 0 ? FMath::RoundToInt(100.0f * static_cast<float>(LcsLength) / static_cast<float>(Denominator)) : 0;
+    }
 }
 
 void SEditingSessionWindow::Construct(const FArguments&)
@@ -267,6 +332,25 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSelectionAndStatusGrid()
                                 .ColorAndOpacity_Lambda([this]() {
                                 return FOutputHelper::Get().IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
                                     })
+                        ]
+
+                    + SGridPanel::Slot(0, 3).Padding(0, 2, 4, 0)
+                        [
+                            SNew(SButton)
+                                .OnClicked(this, &SEditingSessionWindow::OnSelectVideoFolder)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Videos"), false, true)
+                                ]
+                        ]
+                    + SGridPanel::Slot(1, 3).VAlign(VAlign_Center)
+                        [
+                            SNew(STextBlock)
+                                .Text_Lambda([this]() {
+                                    return FText::FromString(SelectedVideoFolder.IsEmpty() ? TEXT("None") : SelectedVideoFolder);
+                                })
+                                .ColorAndOpacity_Lambda([this]() {
+                                    return SelectedVideoFolder.IsEmpty() ? FSlateColor(FLinearColor::Red) : FSlateColor::UseForeground();
+                                })
                         ]
                     ]
         ];
@@ -498,15 +582,19 @@ void SEditingSessionWindow::LoadSettings()
     const FString& Ini = GGameIni;
 #endif
 
-    FString MeshPath, RigPath, FolderPath;
+    FString MeshPath, RigPath, VideoFolderPath;
     GConfig->GetString(CfgSection, MeshKey, MeshPath, Ini);
     GConfig->GetString(CfgSection, RigKey, RigPath, Ini);
+    GConfig->GetString(CfgSection, VideoFolderKey, VideoFolderPath, Ini);
 
     if (!MeshPath.IsEmpty())
         SelectedMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(MeshPath));
 
     if (!RigPath.IsEmpty())
         SelectedRig = TSoftObjectPtr<UObject>(FSoftObjectPath(RigPath));
+
+    if (!VideoFolderPath.IsEmpty())
+        SelectedVideoFolder = VideoFolderPath;
 }
 
 void SEditingSessionWindow::SaveSettings() const
@@ -524,6 +612,7 @@ void SEditingSessionWindow::SaveSettings() const
     if (RigPath.IsValid())
         GConfig->SetString(CfgSection, RigKey, *RigPath.ToString(), Ini);
 
+    GConfig->SetString(CfgSection, VideoFolderKey, *SelectedVideoFolder, Ini);
     GConfig->Flush(false, Ini);
 }
 
@@ -759,6 +848,34 @@ FReply SEditingSessionWindow::OnSelectOutputFolder()
     return FReply::Handled();
 }
 
+FReply SEditingSessionWindow::OnSelectVideoFolder()
+{
+    IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+    if (!DesktopPlatform)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] DesktopPlatform unavailable; cannot open video folder picker."));
+        return FReply::Handled();
+    }
+
+    FString SelectedFolder;
+    const void* ParentWindowHandle = FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr);
+    const bool bSelected = DesktopPlatform->OpenDirectoryDialog(
+        ParentWindowHandle,
+        TEXT("Select Video Folder"),
+        SelectedVideoFolder.IsEmpty() ? FPaths::ProjectDir() : SelectedVideoFolder,
+        SelectedFolder
+    );
+
+    if (bSelected && !SelectedFolder.IsEmpty())
+    {
+        SelectedVideoFolder = SelectedFolder;
+        SaveSettings();
+        LoadBestMatchedVideoForCurrent();
+    }
+
+    return FReply::Handled();
+}
+
 FReply SEditingSessionWindow::OnBakeSaveAnimation()
 {
     const auto& All = FSeqQueue::Get().GetAll();
@@ -839,6 +956,7 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
     // Delegate to helper
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+    LoadBestMatchedVideoForCurrent();
 
     return FReply::Handled();
 }
@@ -872,6 +990,90 @@ FReply SEditingSessionWindow::OnLoadVideoForCurrent()
     }
 
     return FReply::Handled();
+}
+
+FString SEditingSessionWindow::FindBestMatchedVideoForCurrent() const
+{
+    if (SelectedVideoFolder.IsEmpty() || !FPaths::DirectoryExists(SelectedVideoFolder))
+    {
+        return FString();
+    }
+
+    const auto& All = FSeqQueue::Get().GetAll();
+    const int32 CurrentIndex = FSeqQueue::Get().GetCurrentIndex();
+    if (!All.IsValidIndex(CurrentIndex))
+    {
+        return FString();
+    }
+
+    const FQueuedAnim& CurrentAnim = All[CurrentIndex];
+    const FString QueueName = CurrentAnim.DisplayName.IsEmpty()
+        ? CurrentAnim.Path.GetAssetName()
+        : CurrentAnim.DisplayName.ToString();
+
+    TArray<FString> CandidateFiles;
+    IFileManager::Get().IterateDirectoryRecursively(*SelectedVideoFolder, [&CandidateFiles](const TCHAR* FilenameOrDirectory, const bool bIsDirectory)
+    {
+        if (bIsDirectory)
+        {
+            return true;
+        }
+
+        const FString CandidateFile(FilenameOrDirectory);
+        const FString Extension = FPaths::GetExtension(CandidateFile).ToLower();
+        if (Extension == TEXT("mp4") || Extension == TEXT("mov") || Extension == TEXT("mxf") || Extension == TEXT("avi"))
+        {
+            CandidateFiles.Add(CandidateFile);
+        }
+
+        return true;
+    });
+
+    if (CandidateFiles.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No video files found in %s."), *SelectedVideoFolder);
+        return FString();
+    }
+
+    FString BestFile;
+    int32 BestScore = 0;
+    for (const FString& CandidateFile : CandidateFiles)
+    {
+        const int32 Score = ScoreVideoNameMatch(QueueName, FPaths::GetBaseFilename(CandidateFile));
+        if (Score > BestScore)
+        {
+            BestScore = Score;
+            BestFile = CandidateFile;
+        }
+    }
+
+    constexpr int32 MinimumMatchScore = 55;
+    if (BestScore < MinimumMatchScore)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] No matching video found for '%s' in %s. Best score was %d."),
+            *QueueName,
+            *SelectedVideoFolder,
+            BestScore);
+        return FString();
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Matched video for '%s': %s (score %d)"),
+        *QueueName,
+        *BestFile,
+        BestScore);
+    return BestFile;
+}
+
+bool SEditingSessionWindow::LoadBestMatchedVideoForCurrent()
+{
+    const FString MatchedVideo = FindBestMatchedVideoForCurrent();
+    if (MatchedVideo.IsEmpty())
+    {
+        return false;
+    }
+
+    FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(MatchedVideo);
+    return true;
 }
 
 void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
@@ -934,6 +1136,7 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     UObject* RigObj = SelectedRig.LoadSynchronous();
 
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+    LoadBestMatchedVideoForCurrent();
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), FSeqQueue::Get().GetCurrentIndex(), *Anim->GetName());
 }

@@ -42,9 +42,12 @@ private:
     FReply OnSelectSkeletalMesh();
     FReply OnSelectRig();
     FReply OnSelectOutputFolder();
+    FReply OnSelectVideoFolder();
     FReply OnBakeSaveAnimation();
     FReply OnLoadNextAnimation();
     FReply OnLoadVideoForCurrent();
+    bool LoadBestMatchedVideoForCurrent();
+    FString FindBestMatchedVideoForCurrent() const;
 
     FString GetCurrentConfiguredOutputFolder() const;
     void ExportAnimSequencesToFolder(const FString& sourceContentFolder, const FString& outputDiskFolder) const;
@@ -58,11 +61,13 @@ private:
 
     TSoftObjectPtr<USkeletalMesh> SelectedMesh;
     TSoftObjectPtr<UObject> SelectedRig;
+    FString SelectedVideoFolder;
 
     // Config keys
     static constexpr const TCHAR* CfgSection = TEXT("ToucanEditingSession");
     static constexpr const TCHAR* MeshKey = TEXT("LastSelectedMesh");
     static constexpr const TCHAR* RigKey = TEXT("LastSelectedRig");
+    static constexpr const TCHAR* VideoFolderKey = TEXT("LastSelectedVideoFolder");
 
     void LoadSettings();
     void SaveSettings() const;
