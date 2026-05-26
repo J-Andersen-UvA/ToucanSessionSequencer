@@ -1174,6 +1174,20 @@ void FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(const FString& 
         return;
     }
 
+    FSequenceOpenResult RemoveMediaTracksResult;
+    const int32 RemovedMediaTracks = USequencerAbstractionBPLibrary::RemoveMediaTracksFromBinding(
+        Sequence,
+        MediaPlateBindingID,
+        RemoveMediaTracksResult);
+    if (!RemoveMediaTracksResult.bSuccess)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to clear old MediaPlate media tracks: %s"), *RemoveMediaTracksResult.Error);
+    }
+    else if (RemovedMediaTracks > 0)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Removed %d old MediaPlate media track(s)."), RemovedMediaTracks);
+    }
+
     const FFrameNumber InitialFrame = MovieScene->GetPlaybackRange().GetLowerBoundValue();
     FSequenceOpenResult MediaSectionResult;
     UMovieSceneSection* MediaSection = USequencerAbstractionBPLibrary::AddMediaSourceProxySectionToBinding(
