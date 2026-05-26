@@ -15,7 +15,6 @@
 #include "GameFramework/Actor.h"
 #include "Editor.h"
 #include "ILevelSequenceEditorToolkit.h"
-#include "LevelSequenceEditorSubsystem.h"
 #include "ISequencer.h"
 #include "SequencerSettings.h"
 #include "SequencerTools.h"
@@ -25,9 +24,6 @@
 #include "MovieSceneToolHelpers.h"
 #include "MovieSceneSequence.h"
 #include "MovieSceneSection.h"
-#include "MovieSceneMediaTrack.h"
-#include "MovieSceneMediaSection.h"
-#include "MovieSceneObjectBindingID.h"
 #include "MediaPlate.h"
 #include "MediaPlateComponent.h"
 #include "Exporters/AnimSeqExportOption.h"
@@ -49,9 +45,7 @@
 #include "Animation/AnimationSettings.h"
 #include "ToucanBakedAnimMetadata.h"
 
-#if WITH_SEQUENCER_ABSTRACTION
 #include "SequencerAbstractionBPLibrary.h"
-#endif
 
 #include "Runtime/Launch/Resources/Version.h"
 
@@ -77,26 +71,6 @@ void setLooping(ULevelSequence* LevelSequence)
             }
         }
     }
-}
-
-void FocusMovieSceneOnSection(UMovieScene* MovieScene, UMovieSceneSection* Section, float PaddingSeconds = 0.4f)
-{
-    if (!MovieScene || !Section || !Section->HasStartFrame() || !Section->HasEndFrame())
-    {
-        return;
-    }
-
-    MovieScene->SetPlaybackRangeLocked(false);
-
-    const FFrameNumber StartTick = Section->GetInclusiveStartFrame();
-    const FFrameNumber EndTick = FMath::Max(StartTick + 1, Section->GetExclusiveEndFrame() - 1);
-    MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Inclusive(StartTick, EndTick));
-
-    const FFrameRate TickResolution = MovieScene->GetTickResolution();
-    const double StartSeconds = TickResolution.AsSeconds(FFrameTime(StartTick));
-    const double EndSeconds = TickResolution.AsSeconds(FFrameTime(EndTick));
-    MovieScene->SetWorkingRange(StartSeconds - PaddingSeconds, EndSeconds + PaddingSeconds);
-    MovieScene->SetViewRange(StartSeconds - PaddingSeconds, EndSeconds + PaddingSeconds);
 }
 
 void NotifyActiveSequencer(ULevelSequence* LevelSequence, EMovieSceneDataChangeType ChangeType)
@@ -204,32 +178,6 @@ AMediaPlate* AssignMediaSourceToMediaPlate(UFileMediaSource* MediaSource)
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Assigned video to MediaPlate: %s"), *MediaPlate->GetName());
     return MediaPlate;
-}
-
-FGuid FindOrCreateMediaPlateBinding(ULevelSequence* Sequence, UMovieScene* MovieScene, AMediaPlate* MediaPlate)
-{
-    if (!Sequence || !MovieScene || !MediaPlate || !GEditor)
-    {
-        return FGuid();
-    }
-
-    FGuid BindingID = FEditingSessionSequencerHelper::FindBindingForObject(Sequence, MediaPlate);
-    if (BindingID.IsValid())
-    {
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing MediaPlate binding: %s"), *BindingID.ToString());
-        return BindingID;
-    }
-
-    UWorld* World = GEditor->GetEditorWorldContext().World();
-    if (!World)
-    {
-        return FGuid();
-    }
-
-    BindingID = MovieScene->AddPossessable(MediaPlate->GetActorLabel(), MediaPlate->GetClass());
-    Sequence->BindPossessableObject(BindingID, *MediaPlate, World);
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created MediaPlate binding: %s"), *BindingID.ToString());
-    return BindingID;
 }
 
 enum class EFfprobeTimecodeResult
@@ -478,10 +426,11 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
             if (SourceTimecode != FTimecode())
             {
                 UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video source timecode found: %s"), *SourceTimecode.ToString());
-                if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
+                FSequenceOpenResult SnapResult;
+                USequencerAbstractionBPLibrary::SnapSectionToSourceTimecode(PinnedSequence, PinnedSection, false, SnapResult);
+                if (!SnapResult.bSuccess)
                 {
-                    LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ PinnedSection });
-                    NotifyActiveSequencer(PinnedSequence, EMovieSceneDataChangeType::TrackValueChanged);
+                    UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to snap video section using SequencerAbstraction: %s"), *SnapResult.Error);
                 }
 
                 if (Notification.IsValid())
@@ -504,10 +453,11 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
                     PinnedSection->TimecodeSource = FMovieSceneTimecodeSource(FallbackTimecode);
                     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] ffprobe fallback found video source timecode: %s"), *FallbackTimecode.ToString());
 
-                    if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
+                    FSequenceOpenResult SnapResult;
+                    USequencerAbstractionBPLibrary::SnapSectionToSourceTimecode(PinnedSequence, PinnedSection, false, SnapResult);
+                    if (!SnapResult.bSuccess)
                     {
-                        LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ PinnedSection });
-                        NotifyActiveSequencer(PinnedSequence, EMovieSceneDataChangeType::TrackValueChanged);
+                        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to snap video section using SequencerAbstraction: %s"), *SnapResult.Error);
                     }
 
                     if (Notification.IsValid())
@@ -865,12 +815,13 @@ UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequ
         MovieScene->SetWorkingRange(-0.4f, Animation->GetPlayLength()+0.4f);
         MovieScene->SetViewRange(-0.4f, Animation->GetPlayLength()+0.4f);
 
-        if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Trying to snap animation section using source timecode: %s"),
+            *Section->TimecodeSource.Timecode.ToString());
+        FSequenceOpenResult SnapResult;
+        USequencerAbstractionBPLibrary::SnapSectionToSourceTimecode(LevelSequence, Section, true, SnapResult);
+        if (!SnapResult.bSuccess)
         {
-            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Trying to snap animation section using source timecode: %s"),
-                *Section->TimecodeSource.Timecode.ToString());
-            LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ Section });
-            FocusMovieSceneOnSection(MovieScene, Section);
+            UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to snap animation section using SequencerAbstraction: %s"), *SnapResult.Error);
         }
     }
 
@@ -1211,46 +1162,32 @@ void FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(const FString& 
     UFileMediaSource* MediaSource = NewObject<UFileMediaSource>(Sequence, NAME_None, RF_Transactional);
     MediaSource->SetFilePath(PlaybackVideoFilePath);
     AMediaPlate* MediaPlate = AssignMediaSourceToMediaPlate(MediaSource);
-    const FGuid MediaPlateBindingID = FindOrCreateMediaPlateBinding(Sequence, MovieScene, MediaPlate);
-    if (!MediaPlateBindingID.IsValid())
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to bind MediaPlate to sequence."));
-        return;
-    }
 
-    UMovieSceneMediaTrack* MediaTrack = MovieScene->FindTrack<UMovieSceneMediaTrack>(MediaPlateBindingID);
-    if (!MediaTrack)
+    FSequenceOpenResult BindingResult;
+    const FGuid MediaPlateBindingID = USequencerAbstractionBPLibrary::FindOrCreatePossessableBinding(
+        Sequence,
+        MediaPlate,
+        BindingResult);
+    if (!BindingResult.bSuccess || !MediaPlateBindingID.IsValid())
     {
-        MediaTrack = MovieScene->AddTrack<UMovieSceneMediaTrack>(MediaPlateBindingID);
-        if (MediaTrack)
-        {
-            MediaTrack->SetDisplayName(FText::FromString(TEXT("Media")));
-        }
-    }
-
-    if (!MediaTrack)
-    {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to create Media track."));
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to bind MediaPlate to sequence: %s"), *BindingResult.Error);
         return;
     }
 
     const FFrameNumber InitialFrame = MovieScene->GetPlaybackRange().GetLowerBoundValue();
-    const FMovieSceneObjectBindingID MediaPlateObjectBindingID{ UE::MovieScene::FRelativeObjectBindingID(MediaPlateBindingID) };
-    UMovieSceneSection* MediaSection = MediaTrack->AddNewMediaSourceProxy(MediaSource, MediaPlateObjectBindingID, 0, InitialFrame);
-    if (!MediaSection)
+    FSequenceOpenResult MediaSectionResult;
+    UMovieSceneSection* MediaSection = USequencerAbstractionBPLibrary::AddMediaSourceProxySectionToBinding(
+        Sequence,
+        MediaPlateBindingID,
+        MediaSource,
+        InitialFrame.Value,
+        0,
+        MediaSectionResult);
+    if (!MediaSectionResult.bSuccess || !MediaSection)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to create Media section."));
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to create MediaPlate media section: %s"), *MediaSectionResult.Error);
         return;
     }
-
-    if (UMovieSceneMediaSection* TypedMediaSection = Cast<UMovieSceneMediaSection>(MediaSection))
-    {
-        TypedMediaSection->bHasMediaPlayerProxy = true;
-    }
-
-    MediaTrack->Modify();
-    MovieScene->Modify();
-    Sequence->MarkPackageDirty();
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added video to sequence, waiting for source timecode: %s (playback: %s)"), *VideoFilePath, *PlaybackVideoFilePath);
     NotifyActiveSequencer(Sequence, EMovieSceneDataChangeType::MovieSceneStructureItemAdded);
@@ -1330,13 +1267,11 @@ void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
     int32 endTrimFrame = 0;
     bool gotPlaybackRange = false;
 
-#if WITH_SEQUENCER_ABSTRACTION
     gotPlaybackRange = USequencerAbstractionBPLibrary::GetSequencePlaybackRange(
         sequence,
         startTrimFrame,
         endTrimFrame
     );
-#endif
 
     if (!gotPlaybackRange)
     {

@@ -35,4 +35,4 @@ The goal is to avoid rebuilding the same Sequencer setup for every clip and to m
 - `ffprobe` on PATH for video timecode fallback and video resolution probing.
 - `ffmpeg` on PATH for automatic 1080 review proxy generation.
 - Optional: `UnrealMidi` / `MidiMapper` for MIDI controls.
-- Optional: `SequencerAbstraction` for shared Sequencer helper functionality where available.
+- `SequencerAbstraction` for shared Sequencer helper functionality.
