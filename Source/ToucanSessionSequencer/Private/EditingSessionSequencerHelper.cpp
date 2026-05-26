@@ -299,6 +299,16 @@ bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& Pro
 {
     bOutMissingExecutable = false;
 
+    FNotificationInfo Info(FText::FromString(TEXT("Creating 1080 video proxy...")));
+    Info.bFireAndForget = false;
+    Info.FadeOutDuration = 0.5f;
+    Info.ExpireDuration = 2.0f;
+    TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(Info);
+    if (Notification.IsValid())
+    {
+        Notification->SetCompletionState(SNotificationItem::CS_Pending);
+    }
+
     FScopedSlowTask SlowTask(1.0f, FText::FromString(TEXT("Creating 1080 review proxy...")));
     SlowTask.MakeDialog(false);
     SlowTask.EnterProgressFrame(1.0f);
@@ -317,6 +327,12 @@ bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& Pro
     {
         bOutMissingExecutable = true;
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: ffmpeg was not found on PATH."));
+        if (Notification.IsValid())
+        {
+            Notification->SetText(FText::FromString(TEXT("ffmpeg not found; using original video.")));
+            Notification->SetCompletionState(SNotificationItem::CS_Fail);
+            Notification->ExpireAndFadeout();
+        }
         return false;
     }
 
@@ -324,10 +340,22 @@ bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& Pro
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy creation failed with exit code %d: %s"), ReturnCode, *StdErr);
         IFileManager::Get().Delete(*ProxyPath, false, true, true);
+        if (Notification.IsValid())
+        {
+            Notification->SetText(FText::FromString(TEXT("Video proxy creation failed; using original video.")));
+            Notification->SetCompletionState(SNotificationItem::CS_Fail);
+            Notification->ExpireAndFadeout();
+        }
         return false;
     }
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created 1080 review proxy: %s"), *ProxyPath);
+    if (Notification.IsValid())
+    {
+        Notification->SetText(FText::FromString(TEXT("1080 video proxy ready.")));
+        Notification->SetCompletionState(SNotificationItem::CS_Success);
+        Notification->ExpireAndFadeout();
+    }
     return true;
 }
 
