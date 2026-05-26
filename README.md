@@ -1,5 +1,8 @@
 # Toucan Session Sequencer
 
+![The Editing Session Window](./Resources/Images/ToucanSessionSequencer.png)
+
+
 ## Why Use This Plugin
 
 Toucan Session Sequencer is for editor sessions where many animation clips need to be reviewed, adjusted, baked, and marked as done. It keeps the session state in one place: the avatar, rig, queued animations, current sequence, related video reference, and processed output.

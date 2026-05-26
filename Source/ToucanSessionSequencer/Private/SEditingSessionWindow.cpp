@@ -371,39 +371,47 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                 // Buttons row
                 + SVerticalBox::Slot().AutoHeight()
                 [
-                    SNew(SHorizontalBox)
-                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                    SNew(SVerticalBox)
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 4)
                         [
-                            SNew(SButton)
-                                //.Text(FText::FromString(TEXT("Bake & Save")))
-                                .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
+                            SNew(SHorizontalBox)
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
-                                    AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Bake & Save"), false, true)
+                                    SNew(SButton)
+                                        //.Text(FText::FromString(TEXT("Bake & Save")))
+                                        .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
+                                        [
+                                            AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Bake & Save"), false, true)
+                                        ]
+                                ]
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                                [
+                                    SNew(SButton)
+                                        //.Text(FText::FromString(TEXT("Next Animation")))
+                                        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+                                        [
+                                            AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Todo"), false, true)
+                                        ]
                                 ]
                         ]
-                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                        + SVerticalBox::Slot().AutoHeight()
                         [
-                            SNew(SButton)
-                                //.Text(FText::FromString(TEXT("Next Animation")))
-                                .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+                            SNew(SHorizontalBox)
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
-                                    AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Todo"), false, true)
+                                    SNew(SButton)
+                                        .OnClicked(this, &SEditingSessionWindow::OnLoadVideoForCurrent)
+                                        [
+                                            AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Load video for current"), false, true)
+                                        ]
                                 ]
-                        ]
-                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
-                        [
-                            SNew(SButton)
-                                .OnClicked(this, &SEditingSessionWindow::OnLoadVideoForCurrent)
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
-                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Load video for current"), false, true)
-                                ]
-                        ]
-                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
-                        [
-                            SNew(SButton)
-                                .OnClicked(this, &SEditingSessionWindow::OnExportFolder)
-                                [
-                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Export Anims in Folder To"), false, true)
+                                    SNew(SButton)
+                                        .OnClicked(this, &SEditingSessionWindow::OnExportFolder)
+                                        [
+                                            AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Export Anims in Folder To"), false, true)
+                                        ]
                                 ]
                         ]
                 ]
