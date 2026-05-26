@@ -393,6 +393,14 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                         + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                         [
                             SNew(SButton)
+                                .OnClicked(this, &SEditingSessionWindow::OnLoadVideoForCurrent)
+                                [
+                                    AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Load video for current"), false, true)
+                                ]
+                        ]
+                        + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                        [
+                            SNew(SButton)
                                 .OnClicked(this, &SEditingSessionWindow::OnExportFolder)
                                 [
                                     AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Export Anims in Folder To"), false, true)
@@ -823,6 +831,37 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
     // Delegate to helper
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+
+    return FReply::Handled();
+}
+
+FReply SEditingSessionWindow::OnLoadVideoForCurrent()
+{
+    IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+    if (!DesktopPlatform)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] DesktopPlatform unavailable; cannot open video picker."));
+        return FReply::Handled();
+    }
+
+    TArray<FString> SelectedFiles;
+    const void* ParentWindowHandle = FSlateApplication::Get().FindBestParentWindowHandleForDialogs(nullptr);
+    const FString FileTypes = TEXT("Video Files (*.mov;*.mp4;*.mxf;*.avi)|*.mov;*.mp4;*.mxf;*.avi|All Files (*.*)|*.*");
+
+    const bool bSelected = DesktopPlatform->OpenFileDialog(
+        ParentWindowHandle,
+        TEXT("Select video for current animation"),
+        FPaths::ProjectDir(),
+        TEXT(""),
+        FileTypes,
+        0,
+        SelectedFiles
+    );
+
+    if (bSelected && SelectedFiles.Num() > 0)
+    {
+        FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(SelectedFiles[0]);
+    }
 
     return FReply::Handled();
 }

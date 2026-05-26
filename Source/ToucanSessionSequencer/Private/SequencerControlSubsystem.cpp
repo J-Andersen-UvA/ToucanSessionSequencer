@@ -121,7 +121,18 @@ UControlRig* USequencerControlSubsystem::GetBoundRigFromSequencer(
     UE_LOG(LogTemp, Log, TEXT("Scene has %d bindings"), Bindings.Num());
     for (const FMovieSceneBinding& B : Bindings)
     {
-        UE_LOG(LogTemp, Log, TEXT("  Binding %s -> %s"), *B.GetName(), *B.GetObjectGuid().ToString());
+        FString BindingName = TEXT("<unnamed>");
+        UMovieScene* NonConstScene = const_cast<UMovieScene*>(Scene);
+        if (const FMovieScenePossessable* Possessable = NonConstScene->FindPossessable(B.GetObjectGuid()))
+        {
+            BindingName = Possessable->GetName();
+        }
+        else if (const FMovieSceneSpawnable* Spawnable = NonConstScene->FindSpawnable(B.GetObjectGuid()))
+        {
+            BindingName = Spawnable->GetName();
+        }
+
+        UE_LOG(LogTemp, Log, TEXT("  Binding %s -> %s"), *BindingName, *B.GetObjectGuid().ToString());
     }
     for (const FMovieSceneBinding& Binding : Bindings)
     {
@@ -238,7 +249,7 @@ void USequencerControlSubsystem::KeyframeAllRigControlsToZero()
     const FFrameNumber FrameNum(Frame);
 
     // Look for all ControlRig tracks in the sequence
-    for (const FMovieSceneBinding& Binding : MovieScene->GetBindings())
+    for (const FMovieSceneBinding& Binding : static_cast<const UMovieScene*>(MovieScene)->GetBindings())
     {
         for (UMovieSceneTrack* Track : Binding.GetTracks())
         {

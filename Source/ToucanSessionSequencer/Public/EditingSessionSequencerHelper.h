@@ -36,6 +36,7 @@ public:
     static void SetActiveSkeletalMeshComponent(USkeletalMeshComponent* InComp);
     static USkeletalMeshComponent* GetActiveSkeletalMeshComponent();
     static void BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath);
+    static void LoadVideoForCurrentSequence(const FString& VideoFilePath);
     static UControlRig* GetActiveRig();
     static void RemoveRigFromSequence(ULevelSequence* LevelSequence);
 

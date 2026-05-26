@@ -44,6 +44,7 @@ private:
     FReply OnSelectOutputFolder();
     FReply OnBakeSaveAnimation();
     FReply OnLoadNextAnimation();
+    FReply OnLoadVideoForCurrent();
 
     FString GetCurrentConfiguredOutputFolder() const;
     void ExportAnimSequencesToFolder(const FString& sourceContentFolder, const FString& outputDiskFolder) const;

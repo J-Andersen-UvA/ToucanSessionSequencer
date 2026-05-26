@@ -25,9 +25,15 @@
 #include "MovieSceneToolHelpers.h"
 #include "MovieSceneSequence.h"
 #include "MovieSceneSection.h"
+#include "MovieSceneMediaTrack.h"
 #include "Exporters/AnimSeqExportOption.h"
+#include "FileMediaSource.h"
 #include "OutputHelper.h"
 #include "Misc/MessageDialog.h"
+#include "Containers/Ticker.h"
+#include "HAL/PlatformProcess.h"
+#include "Framework/Notifications/NotificationManager.h"
+#include "Widgets/Notifications/SNotificationList.h"
 #include "LevelSequencePlayer.h"
 #include "LevelSequenceActor.h"
 #include "MovieSceneSequencePlayer.h"
@@ -84,6 +90,187 @@ void FocusMovieSceneOnSection(UMovieScene* MovieScene, UMovieSceneSection* Secti
     const double EndSeconds = TickResolution.AsSeconds(FFrameTime(EndTick));
     MovieScene->SetWorkingRange(StartSeconds - PaddingSeconds, EndSeconds + PaddingSeconds);
     MovieScene->SetViewRange(StartSeconds - PaddingSeconds, EndSeconds + PaddingSeconds);
+}
+
+void NotifyActiveSequencer(ULevelSequence* LevelSequence, EMovieSceneDataChangeType ChangeType)
+{
+    if (!LevelSequence || !GEditor)
+    {
+        return;
+    }
+
+    if (UAssetEditorSubsystem* EditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+    {
+        if (IAssetEditorInstance* Inst = EditorSubsystem->FindEditorForAsset(LevelSequence, false))
+        {
+            if (ILevelSequenceEditorToolkit* Toolkit = static_cast<ILevelSequenceEditorToolkit*>(Inst))
+            {
+                if (TSharedPtr<ISequencer> Seq = Toolkit->GetSequencer())
+                {
+                    Seq->NotifyMovieSceneDataChanged(ChangeType);
+                    Seq->ForceEvaluate();
+                }
+            }
+        }
+    }
+}
+
+enum class EFfprobeTimecodeResult
+{
+    Success,
+    MissingExecutable,
+    NoTimecode
+};
+
+EFfprobeTimecodeResult TryReadVideoTimecodeWithFfprobe(const FString& VideoFilePath, FTimecode& OutTimecode)
+{
+    FString StdOut;
+    FString StdErr;
+    int32 ReturnCode = 0;
+    const FString Args = FString::Printf(
+        TEXT("-v error -select_streams v:0 -show_entries stream_tags=timecode -of default=noprint_wrappers=1:nokey=1 \"%s\""),
+        *VideoFilePath);
+
+    if (!FPlatformProcess::ExecProcess(TEXT("ffprobe"), *Args, &ReturnCode, &StdOut, &StdErr))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] ffprobe timecode fallback failed: ffprobe was not found on PATH."));
+        return EFfprobeTimecodeResult::MissingExecutable;
+    }
+
+    if (ReturnCode != 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] ffprobe timecode fallback failed with exit code %d: %s"), ReturnCode, *StdErr);
+        return EFfprobeTimecodeResult::NoTimecode;
+    }
+
+    TArray<FString> Lines;
+    StdOut.ParseIntoArrayLines(Lines, true);
+    for (FString Line : Lines)
+    {
+        Line.TrimStartAndEndInline();
+        if (Line.IsEmpty())
+        {
+            continue;
+        }
+
+        const TOptional<FTimecode> ParsedTimecode = FTimecode::ParseTimecode(*Line);
+        if (ParsedTimecode.IsSet())
+        {
+            OutTimecode = ParsedTimecode.GetValue();
+            return EFfprobeTimecodeResult::Success;
+        }
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] ffprobe did not return a parseable timecode. Output: %s"), *StdOut);
+    return EFfprobeTimecodeResult::NoTimecode;
+}
+
+void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieScene* MovieScene, UMovieSceneSection* Section, const FString& VideoFilePath)
+{
+    if (!LevelSequence || !MovieScene || !Section)
+    {
+        return;
+    }
+
+    FNotificationInfo Info(FText::FromString(TEXT("Trying to read video timecode...")));
+    Info.bFireAndForget = false;
+    Info.FadeOutDuration = 0.5f;
+    Info.ExpireDuration = 2.0f;
+    TSharedPtr<SNotificationItem> Notification = FSlateNotificationManager::Get().AddNotification(Info);
+    if (Notification.IsValid())
+    {
+        Notification->SetCompletionState(SNotificationItem::CS_Pending);
+    }
+
+    TWeakObjectPtr<ULevelSequence> WeakSequence(LevelSequence);
+    TWeakObjectPtr<UMovieScene> WeakMovieScene(MovieScene);
+    TWeakObjectPtr<UMovieSceneSection> WeakSection(Section);
+    const double StartSeconds = FPlatformTime::Seconds();
+    constexpr double TimeoutSeconds = 5.0;
+
+    FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda(
+        [WeakSequence, WeakMovieScene, WeakSection, Notification, StartSeconds, VideoFilePath](float)
+        {
+            ULevelSequence* PinnedSequence = WeakSequence.Get();
+            UMovieScene* PinnedMovieScene = WeakMovieScene.Get();
+            UMovieSceneSection* PinnedSection = WeakSection.Get();
+            if (!PinnedSequence || !PinnedMovieScene || !PinnedSection)
+            {
+                if (Notification.IsValid())
+                {
+                    Notification->SetText(FText::FromString(TEXT("Video timecode check failed.")));
+                    Notification->SetCompletionState(SNotificationItem::CS_Fail);
+                    Notification->ExpireAndFadeout();
+                }
+                return false;
+            }
+
+            const FTimecode SourceTimecode = PinnedSection->TimecodeSource.Timecode;
+            if (SourceTimecode != FTimecode())
+            {
+                UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video source timecode found: %s"), *SourceTimecode.ToString());
+                if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
+                {
+                    LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ PinnedSection });
+                    FocusMovieSceneOnSection(PinnedMovieScene, PinnedSection);
+                    NotifyActiveSequencer(PinnedSequence, EMovieSceneDataChangeType::TrackValueChanged);
+                }
+
+                if (Notification.IsValid())
+                {
+                    Notification->SetText(FText::FromString(TEXT("Video timecode loaded.")));
+                    Notification->SetCompletionState(SNotificationItem::CS_Success);
+                    Notification->ExpireAndFadeout();
+                }
+                return false;
+            }
+
+            if (FPlatformTime::Seconds() - StartSeconds >= TimeoutSeconds)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video source timecode was not available after %.1f seconds. Trying ffprobe fallback."), TimeoutSeconds);
+
+                FTimecode FallbackTimecode;
+                const EFfprobeTimecodeResult FallbackResult = TryReadVideoTimecodeWithFfprobe(VideoFilePath, FallbackTimecode);
+                if (FallbackResult == EFfprobeTimecodeResult::Success)
+                {
+                    PinnedSection->TimecodeSource = FMovieSceneTimecodeSource(FallbackTimecode);
+                    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] ffprobe fallback found video source timecode: %s"), *FallbackTimecode.ToString());
+
+                    if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
+                    {
+                        LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ PinnedSection });
+                        FocusMovieSceneOnSection(PinnedMovieScene, PinnedSection);
+                        NotifyActiveSequencer(PinnedSequence, EMovieSceneDataChangeType::TrackValueChanged);
+                    }
+
+                    if (Notification.IsValid())
+                    {
+                        Notification->SetText(FText::FromString(TEXT("Video timecode loaded with ffprobe fallback.")));
+                        Notification->SetCompletionState(SNotificationItem::CS_Success);
+                        Notification->ExpireAndFadeout();
+                    }
+                }
+                else if (FallbackResult == EFfprobeTimecodeResult::MissingExecutable)
+                {
+                    if (Notification.IsValid())
+                    {
+                        Notification->SetText(FText::FromString(TEXT("ffprobe not found on PATH; video timecode fallback skipped.")));
+                        Notification->SetCompletionState(SNotificationItem::CS_Fail);
+                        Notification->ExpireAndFadeout();
+                    }
+                }
+                else if (Notification.IsValid())
+                {
+                    Notification->SetText(FText::FromString(TEXT("No video timecode found within 5 seconds.")));
+                    Notification->SetCompletionState(SNotificationItem::CS_Fail);
+                    Notification->ExpireAndFadeout();
+                }
+                return false;
+            }
+
+            return true;
+        }),
+        0.1f);
 }
 
 void FEditingSessionSequencerHelper::LoadNextAnimation(
@@ -728,6 +915,64 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Restored AnimSettings DefaultFrameRate to %d/%d"),
         OriginalRate.Numerator, OriginalRate.Denominator);
 #endif // WITH_EDITOR
+}
+
+void FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(const FString& VideoFilePath)
+{
+    ULevelSequence* Sequence = GetActiveSequence();
+    if (!Sequence)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: no active sequence."));
+        return;
+    }
+
+    UMovieScene* MovieScene = Sequence->GetMovieScene();
+    if (!MovieScene)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: active sequence has no MovieScene."));
+        return;
+    }
+
+    if (VideoFilePath.IsEmpty() || !FPaths::FileExists(VideoFilePath))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: file does not exist: %s"), *VideoFilePath);
+        return;
+    }
+
+    UFileMediaSource* MediaSource = NewObject<UFileMediaSource>(Sequence, NAME_None, RF_Transactional);
+    MediaSource->SetFilePath(VideoFilePath);
+
+    UMovieSceneMediaTrack* MediaTrack = MovieScene->FindTrack<UMovieSceneMediaTrack>();
+    if (!MediaTrack)
+    {
+        MediaTrack = MovieScene->AddTrack<UMovieSceneMediaTrack>();
+        if (MediaTrack)
+        {
+            MediaTrack->SetDisplayName(FText::FromString(TEXT("Media")));
+        }
+    }
+
+    if (!MediaTrack)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to create Media track."));
+        return;
+    }
+
+    const FFrameNumber InitialFrame = MovieScene->GetPlaybackRange().GetLowerBoundValue();
+    UMovieSceneSection* MediaSection = MediaTrack->AddNewMediaSource(*MediaSource, InitialFrame);
+    if (!MediaSection)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to create Media section."));
+        return;
+    }
+
+    MediaTrack->Modify();
+    MovieScene->Modify();
+    Sequence->MarkPackageDirty();
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added video to sequence, waiting for source timecode: %s"), *VideoFilePath);
+    NotifyActiveSequencer(Sequence, EMovieSceneDataChangeType::MovieSceneStructureItemAdded);
+    WaitForMediaSectionTimecodeAndSnap(Sequence, MovieScene, MediaSection, VideoFilePath);
 }
 
 UControlRig* FEditingSessionSequencerHelper::GetActiveRig()
