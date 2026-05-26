@@ -9,6 +9,7 @@
 #include "ControlRig.h"
 
 class ULevelSequence;
+class UMovieSceneSection;
 class ASkeletalMeshActor;
 class UControlRig;
 class UToucanBakedAnimMetadata;
@@ -51,7 +52,7 @@ private:
 private:
     // --- Internal helpers ---
     static ASkeletalMeshActor* SpawnOrFindSkeletalMeshActor(UWorld* World, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
-    static void AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange = true);
+    static UMovieSceneSection* AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange = true);
     static void AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig);
     static ULevelSequence* CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName);
 

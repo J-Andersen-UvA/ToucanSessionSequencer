@@ -15,6 +15,7 @@
 #include "GameFramework/Actor.h"
 #include "Editor.h"
 #include "ILevelSequenceEditorToolkit.h"
+#include "LevelSequenceEditorSubsystem.h"
 #include "ISequencer.h"
 #include "SequencerSettings.h"
 #include "SequencerTools.h"
@@ -23,6 +24,7 @@
 #include "EditorAssetLibrary.h"
 #include "MovieSceneToolHelpers.h"
 #include "MovieSceneSequence.h"
+#include "MovieSceneSection.h"
 #include "Exporters/AnimSeqExportOption.h"
 #include "OutputHelper.h"
 #include "Misc/MessageDialog.h"
@@ -62,6 +64,26 @@ void setLooping(ULevelSequence* LevelSequence)
             }
         }
     }
+}
+
+void FocusMovieSceneOnSection(UMovieScene* MovieScene, UMovieSceneSection* Section, float PaddingSeconds = 0.4f)
+{
+    if (!MovieScene || !Section || !Section->HasStartFrame() || !Section->HasEndFrame())
+    {
+        return;
+    }
+
+    MovieScene->SetPlaybackRangeLocked(false);
+
+    const FFrameNumber StartTick = Section->GetInclusiveStartFrame();
+    const FFrameNumber EndTick = FMath::Max(StartTick + 1, Section->GetExclusiveEndFrame() - 1);
+    MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Inclusive(StartTick, EndTick));
+
+    const FFrameRate TickResolution = MovieScene->GetTickResolution();
+    const double StartSeconds = TickResolution.AsSeconds(FFrameTime(StartTick));
+    const double EndSeconds = TickResolution.AsSeconds(FFrameTime(EndTick));
+    MovieScene->SetWorkingRange(StartSeconds - PaddingSeconds, EndSeconds + PaddingSeconds);
+    MovieScene->SetViewRange(StartSeconds - PaddingSeconds, EndSeconds + PaddingSeconds);
 }
 
 void FEditingSessionSequencerHelper::LoadNextAnimation(
@@ -329,20 +351,20 @@ int32 GetSourceFrameCount(const UAnimSequence* Animation)
     return 0;
 }
 
-void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange)
+UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange)
 {
     if (!LevelSequence || !Animation)
-        return;
+        return nullptr;
 
     UMovieScene* MovieScene = LevelSequence->GetMovieScene();
-    if (!MovieScene) return;
+    if (!MovieScene) return nullptr;
 
     // Find the existing binding by ID
     FMovieSceneBinding* Binding = MovieScene->FindBinding(BindingID);
     if (!Binding)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Invalid BindingID when adding animation track."));
-        return;
+        return nullptr;
     }
 
     // Remove old animation tracks bound to this actor only
@@ -363,13 +385,13 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
     UMovieSceneSkeletalAnimationTrack* AnimTrack = Cast<UMovieSceneSkeletalAnimationTrack>(
         MovieScene->AddTrack(UMovieSceneSkeletalAnimationTrack::StaticClass(), BindingID)
     );
-    if (!AnimTrack) return;
+    if (!AnimTrack) return nullptr;
 
     UMovieSceneSection* Section = AnimTrack->AddNewAnimation(FFrameNumber(0), Animation);
     if (!Section)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] AddNewAnimation returned null. Possibly invalid binding or uninitialized sequence."));
-        return;
+        return nullptr;
     }
 
     if (bSetAnimRange)
@@ -388,12 +410,21 @@ void FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequ
 
         MovieScene->SetWorkingRange(-0.4f, Animation->GetPlayLength()+0.4f);
         MovieScene->SetViewRange(-0.4f, Animation->GetPlayLength()+0.4f);
+
+        if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
+        {
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Trying to snap animation section using source timecode: %s"),
+                *Section->TimecodeSource.Timecode.ToString());
+            LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ Section });
+            FocusMovieSceneOnSection(MovieScene, Section);
+        }
     }
 
     AnimTrack->Modify();
     MovieScene->Modify();
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added animation '%s' to Level Sequence."), *Animation->GetName());
+    return Section;
 }
 
 void FEditingSessionSequencerHelper::AddRigToSequence(
@@ -725,7 +756,7 @@ void FEditingSessionSequencerHelper::RemoveRigFromSequence(ULevelSequence* Level
     TArray<UMovieSceneTrack*> TracksToRemove;
 
     // Gather all ControlRig parameter tracks
-    for (FMovieSceneBinding& Binding : MovieScene->GetBindings())
+    for (const FMovieSceneBinding& Binding : static_cast<const UMovieScene*>(MovieScene)->GetBindings())
     {
         for (UMovieSceneTrack* Track : Binding.GetTracks())
         {
