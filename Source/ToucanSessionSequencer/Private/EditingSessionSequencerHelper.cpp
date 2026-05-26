@@ -26,11 +26,18 @@
 #include "MovieSceneSequence.h"
 #include "MovieSceneSection.h"
 #include "MovieSceneMediaTrack.h"
+#include "MovieSceneMediaSection.h"
+#include "MovieSceneObjectBindingID.h"
+#include "MediaPlate.h"
+#include "MediaPlateComponent.h"
 #include "Exporters/AnimSeqExportOption.h"
 #include "FileMediaSource.h"
 #include "OutputHelper.h"
 #include "Misc/MessageDialog.h"
+#include "Misc/ScopedSlowTask.h"
+#include "Misc/SecureHash.h"
 #include "Containers/Ticker.h"
+#include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Framework/Notifications/NotificationManager.h"
 #include "Widgets/Notifications/SNotificationList.h"
@@ -115,12 +122,246 @@ void NotifyActiveSequencer(ULevelSequence* LevelSequence, EMovieSceneDataChangeT
     }
 }
 
+AMediaPlate* FindOrSpawnMediaPlate(UWorld* World)
+{
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    AMediaPlate* FirstMediaPlate = nullptr;
+    for (TActorIterator<AMediaPlate> It(World); It; ++It)
+    {
+        AMediaPlate* ExistingMediaPlate = *It;
+        if (!ExistingMediaPlate)
+        {
+            continue;
+        }
+
+        if (!FirstMediaPlate)
+        {
+            FirstMediaPlate = ExistingMediaPlate;
+        }
+
+        if (ExistingMediaPlate->GetActorLabel() == TEXT("ToucanSession_MediaPlate"))
+        {
+            UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing ToucanSession_MediaPlate."));
+            return ExistingMediaPlate;
+        }
+    }
+
+    if (FirstMediaPlate)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing existing MediaPlate: %s"), *FirstMediaPlate->GetName());
+        return FirstMediaPlate;
+    }
+
+    FVector SpawnLocation(0.0f, 0.0f, 150.0f);
+    for (TActorIterator<ASkeletalMeshActor> It(World); It; ++It)
+    {
+        if (It->GetName() == TEXT("EditingSession_SkeletalMeshActor"))
+        {
+            SpawnLocation = It->GetActorLocation() + FVector(0.0f, -250.0f, 120.0f);
+            break;
+        }
+    }
+
+    AMediaPlate* MediaPlate = World->SpawnActor<AMediaPlate>(AMediaPlate::StaticClass(), SpawnLocation, FRotator::ZeroRotator);
+    if (MediaPlate)
+    {
+        MediaPlate->SetActorLabel(TEXT("ToucanSession_MediaPlate"));
+#if WITH_EDITOR
+        MediaPlate->UseDefaultMaterial();
+#endif
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Spawned ToucanSession_MediaPlate."));
+    }
+
+    return MediaPlate;
+}
+
+AMediaPlate* AssignMediaSourceToMediaPlate(UFileMediaSource* MediaSource)
+{
+    if (!MediaSource || !GEditor)
+    {
+        return nullptr;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    AMediaPlate* MediaPlate = FindOrSpawnMediaPlate(World);
+    if (!MediaPlate || !MediaPlate->MediaPlateComponent)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Could not assign video to MediaPlate."));
+        return nullptr;
+    }
+
+    UMediaPlateComponent* MediaPlateComponent = MediaPlate->MediaPlateComponent;
+    MediaPlate->Modify();
+    MediaPlateComponent->Modify();
+    MediaPlateComponent->Close();
+    MediaPlateComponent->bAutoPlay = false;
+    MediaPlateComponent->bPlayOnOpen = false;
+    MediaPlateComponent->SelectMediaSourceAsset(MediaSource);
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Assigned video to MediaPlate: %s"), *MediaPlate->GetName());
+    return MediaPlate;
+}
+
+FGuid FindOrCreateMediaPlateBinding(ULevelSequence* Sequence, UMovieScene* MovieScene, AMediaPlate* MediaPlate)
+{
+    if (!Sequence || !MovieScene || !MediaPlate || !GEditor)
+    {
+        return FGuid();
+    }
+
+    FGuid BindingID = FEditingSessionSequencerHelper::FindBindingForObject(Sequence, MediaPlate);
+    if (BindingID.IsValid())
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Reusing MediaPlate binding: %s"), *BindingID.ToString());
+        return BindingID;
+    }
+
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    if (!World)
+    {
+        return FGuid();
+    }
+
+    BindingID = MovieScene->AddPossessable(MediaPlate->GetActorLabel(), MediaPlate->GetClass());
+    Sequence->BindPossessableObject(BindingID, *MediaPlate, World);
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created MediaPlate binding: %s"), *BindingID.ToString());
+    return BindingID;
+}
+
 enum class EFfprobeTimecodeResult
 {
     Success,
     MissingExecutable,
     NoTimecode
 };
+
+bool TryGetVideoResolutionWithFfprobe(const FString& VideoFilePath, FIntPoint& OutResolution, bool& bOutMissingExecutable)
+{
+    bOutMissingExecutable = false;
+
+    FString StdOut;
+    FString StdErr;
+    int32 ReturnCode = 0;
+    const FString Args = FString::Printf(
+        TEXT("-v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x \"%s\""),
+        *VideoFilePath);
+
+    if (!FPlatformProcess::ExecProcess(TEXT("ffprobe"), *Args, &ReturnCode, &StdOut, &StdErr))
+    {
+        bOutMissingExecutable = true;
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: ffprobe was not found on PATH."));
+        return false;
+    }
+
+    if (ReturnCode != 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: ffprobe failed with exit code %d: %s"), ReturnCode, *StdErr);
+        return false;
+    }
+
+    FString Line = StdOut;
+    Line.TrimStartAndEndInline();
+
+    FString WidthText;
+    FString HeightText;
+    if (!Line.Split(TEXT("x"), &WidthText, &HeightText))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: could not parse ffprobe resolution output: %s"), *StdOut);
+        return false;
+    }
+
+    OutResolution.X = FCString::Atoi(*WidthText);
+    OutResolution.Y = FCString::Atoi(*HeightText);
+    return OutResolution.X > 0 && OutResolution.Y > 0;
+}
+
+FString GetCachedVideoProxyPath(const FString& VideoFilePath)
+{
+    const FString ProxyDir = FPaths::ProjectSavedDir() / TEXT("ToucanSessionSequencer/VideoProxies");
+    IFileManager::Get().MakeDirectory(*ProxyDir, true);
+
+    const FFileStatData StatData = IFileManager::Get().GetStatData(*VideoFilePath);
+    const FString HashInput = FString::Printf(
+        TEXT("%s|%lld|%s"),
+        *VideoFilePath,
+        StatData.FileSize,
+        *StatData.ModificationTime.ToString());
+    const FString Hash = FMD5::HashAnsiString(*HashInput).Left(10);
+    const FString CleanBaseName = FPaths::MakeValidFileName(FPaths::GetBaseFilename(VideoFilePath));
+    return ProxyDir / FString::Printf(TEXT("%s_%s_1080.mp4"), *CleanBaseName, *Hash);
+}
+
+bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& ProxyPath, const FIntPoint& SourceResolution, bool& bOutMissingExecutable)
+{
+    bOutMissingExecutable = false;
+
+    FScopedSlowTask SlowTask(1.0f, FText::FromString(TEXT("Creating 1080 review proxy...")));
+    SlowTask.MakeDialog(false);
+    SlowTask.EnterProgressFrame(1.0f);
+
+    FString StdOut;
+    FString StdErr;
+    int32 ReturnCode = 0;
+    const FString Scale = SourceResolution.X >= SourceResolution.Y ? TEXT("-2:1080") : TEXT("1080:-2");
+    const FString Args = FString::Printf(
+        TEXT("-y -hide_banner -loglevel error -i \"%s\" -vf scale=%s -c:v libx264 -preset ultrafast -crf 20 -g 1 -pix_fmt yuv420p -an \"%s\""),
+        *SourcePath,
+        *Scale,
+        *ProxyPath);
+
+    if (!FPlatformProcess::ExecProcess(TEXT("ffmpeg"), *Args, &ReturnCode, &StdOut, &StdErr))
+    {
+        bOutMissingExecutable = true;
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: ffmpeg was not found on PATH."));
+        return false;
+    }
+
+    if (ReturnCode != 0 || !FPaths::FileExists(ProxyPath))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy creation failed with exit code %d: %s"), ReturnCode, *StdErr);
+        IFileManager::Get().Delete(*ProxyPath, false, true, true);
+        return false;
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created 1080 review proxy: %s"), *ProxyPath);
+    return true;
+}
+
+FString ResolveVideoPathForEditorPlayback(const FString& OriginalVideoFilePath)
+{
+    FIntPoint SourceResolution;
+    bool bMissingFfprobe = false;
+    if (!TryGetVideoResolutionWithFfprobe(OriginalVideoFilePath, SourceResolution, bMissingFfprobe))
+    {
+        return OriginalVideoFilePath;
+    }
+
+    if (SourceResolution.X <= 1920 && SourceResolution.Y <= 1080)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video is already editor-friendly resolution: %dx%d"), SourceResolution.X, SourceResolution.Y);
+        return OriginalVideoFilePath;
+    }
+
+    const FString ProxyPath = GetCachedVideoProxyPath(OriginalVideoFilePath);
+    if (FPaths::FileExists(ProxyPath))
+    {
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Using cached 1080 review proxy: %s"), *ProxyPath);
+        return ProxyPath;
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video is %dx%d; creating 1080 review proxy."), SourceResolution.X, SourceResolution.Y);
+    bool bMissingFfmpeg = false;
+    if (TryCreateVideoProxyWithFfmpeg(OriginalVideoFilePath, ProxyPath, SourceResolution, bMissingFfmpeg))
+    {
+        return ProxyPath;
+    }
+
+    return OriginalVideoFilePath;
+}
 
 EFfprobeTimecodeResult TryReadVideoTimecodeWithFfprobe(const FString& VideoFilePath, FTimecode& OutTimecode)
 {
@@ -186,7 +427,7 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
     TWeakObjectPtr<UMovieScene> WeakMovieScene(MovieScene);
     TWeakObjectPtr<UMovieSceneSection> WeakSection(Section);
     const double StartSeconds = FPlatformTime::Seconds();
-    constexpr double TimeoutSeconds = 5.0;
+    constexpr double TimeoutSeconds = 2.0;
 
     FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda(
         [WeakSequence, WeakMovieScene, WeakSection, Notification, StartSeconds, VideoFilePath](float)
@@ -212,7 +453,6 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
                 if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
                 {
                     LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ PinnedSection });
-                    FocusMovieSceneOnSection(PinnedMovieScene, PinnedSection);
                     NotifyActiveSequencer(PinnedSequence, EMovieSceneDataChangeType::TrackValueChanged);
                 }
 
@@ -239,7 +479,6 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
                     if (ULevelSequenceEditorSubsystem* LevelSequenceEditorSubsystem = GEditor->GetEditorSubsystem<ULevelSequenceEditorSubsystem>())
                     {
                         LevelSequenceEditorSubsystem->SnapSectionsToTimelineUsingSourceTimecode({ PinnedSection });
-                        FocusMovieSceneOnSection(PinnedMovieScene, PinnedSection);
                         NotifyActiveSequencer(PinnedSequence, EMovieSceneDataChangeType::TrackValueChanged);
                     }
 
@@ -261,7 +500,7 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
                 }
                 else if (Notification.IsValid())
                 {
-                    Notification->SetText(FText::FromString(TEXT("No video timecode found within 5 seconds.")));
+                    Notification->SetText(FText::FromString(TEXT("No video timecode found within 2 seconds.")));
                     Notification->SetCompletionState(SNotificationItem::CS_Fail);
                     Notification->ExpireAndFadeout();
                 }
@@ -939,13 +1178,22 @@ void FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(const FString& 
         return;
     }
 
-    UFileMediaSource* MediaSource = NewObject<UFileMediaSource>(Sequence, NAME_None, RF_Transactional);
-    MediaSource->SetFilePath(VideoFilePath);
+    const FString PlaybackVideoFilePath = ResolveVideoPathForEditorPlayback(VideoFilePath);
 
-    UMovieSceneMediaTrack* MediaTrack = MovieScene->FindTrack<UMovieSceneMediaTrack>();
+    UFileMediaSource* MediaSource = NewObject<UFileMediaSource>(Sequence, NAME_None, RF_Transactional);
+    MediaSource->SetFilePath(PlaybackVideoFilePath);
+    AMediaPlate* MediaPlate = AssignMediaSourceToMediaPlate(MediaSource);
+    const FGuid MediaPlateBindingID = FindOrCreateMediaPlateBinding(Sequence, MovieScene, MediaPlate);
+    if (!MediaPlateBindingID.IsValid())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to bind MediaPlate to sequence."));
+        return;
+    }
+
+    UMovieSceneMediaTrack* MediaTrack = MovieScene->FindTrack<UMovieSceneMediaTrack>(MediaPlateBindingID);
     if (!MediaTrack)
     {
-        MediaTrack = MovieScene->AddTrack<UMovieSceneMediaTrack>();
+        MediaTrack = MovieScene->AddTrack<UMovieSceneMediaTrack>(MediaPlateBindingID);
         if (MediaTrack)
         {
             MediaTrack->SetDisplayName(FText::FromString(TEXT("Media")));
@@ -959,18 +1207,24 @@ void FEditingSessionSequencerHelper::LoadVideoForCurrentSequence(const FString& 
     }
 
     const FFrameNumber InitialFrame = MovieScene->GetPlaybackRange().GetLowerBoundValue();
-    UMovieSceneSection* MediaSection = MediaTrack->AddNewMediaSource(*MediaSource, InitialFrame);
+    const FMovieSceneObjectBindingID MediaPlateObjectBindingID{ UE::MovieScene::FRelativeObjectBindingID(MediaPlateBindingID) };
+    UMovieSceneSection* MediaSection = MediaTrack->AddNewMediaSourceProxy(MediaSource, MediaPlateObjectBindingID, 0, InitialFrame);
     if (!MediaSection)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot load video: failed to create Media section."));
         return;
     }
 
+    if (UMovieSceneMediaSection* TypedMediaSection = Cast<UMovieSceneMediaSection>(MediaSection))
+    {
+        TypedMediaSection->bHasMediaPlayerProxy = true;
+    }
+
     MediaTrack->Modify();
     MovieScene->Modify();
     Sequence->MarkPackageDirty();
 
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added video to sequence, waiting for source timecode: %s"), *VideoFilePath);
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Added video to sequence, waiting for source timecode: %s (playback: %s)"), *VideoFilePath, *PlaybackVideoFilePath);
     NotifyActiveSequencer(Sequence, EMovieSceneDataChangeType::MovieSceneStructureItemAdded);
     WaitForMediaSectionTimecodeAndSnap(Sequence, MovieScene, MediaSection, VideoFilePath);
 }

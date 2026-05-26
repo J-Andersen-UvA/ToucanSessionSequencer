@@ -31,6 +31,7 @@ public class ToucanSessionSequencer : ModuleRules
             "ContentBrowser",
             "DesktopPlatform",
             "EditorStyle",
+            "MediaPlate",
             "Projects",
             "InputCore",
             "Kismet",
