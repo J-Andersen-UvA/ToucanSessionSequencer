@@ -76,6 +76,8 @@ void FOutputHelper::MarkAssetAsProcessed(const FString& AssetPath)
     }
 
     UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("True"));
+    UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Checkpointed"), TEXT("False"));
+    UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("CheckpointPath"), TEXT(""));
 
     if (UEditorAssetLibrary::SaveAsset(AssetPath))
     {
@@ -87,4 +89,18 @@ void FOutputHelper::MarkAssetAsProcessed(const FString& AssetPath)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to save tagged asset: %s"), *AssetPath);
     }
+}
+
+void FOutputHelper::ClearCheckpointMetadata(const FString& AssetPath)
+{
+    UObject* Asset = UEditorAssetLibrary::LoadAsset(AssetPath);
+    if (!Asset)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load asset for checkpoint metadata clear: %s"), *AssetPath);
+        return;
+    }
+
+    UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Checkpointed"), TEXT("False"));
+    UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("CheckpointPath"), TEXT(""));
+    UEditorAssetLibrary::SaveAsset(AssetPath);
 }

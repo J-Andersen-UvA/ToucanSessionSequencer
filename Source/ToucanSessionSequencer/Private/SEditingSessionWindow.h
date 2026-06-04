@@ -44,6 +44,7 @@ private:
     FReply OnSelectOutputFolder();
     FReply OnSelectVideoFolder();
     FReply OnBakeSaveAnimation();
+    FReply OnCheckpointCurrentAnimation();
     FReply OnLoadNextAnimation();
     FReply OnLoadVideoForCurrent();
     bool LoadBestMatchedVideoForCurrent();
@@ -54,6 +55,7 @@ private:
     FReply OnExportFolder();
 
     void LoadAnimationAtIndex(int32 TargetIndex);
+    void ContinueFromCheckpointAtIndex(int32 TargetIndex);
 
 private:
     TArray<TSharedPtr<FQueuedAnim>> Rows;

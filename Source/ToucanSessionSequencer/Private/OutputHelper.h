@@ -14,6 +14,7 @@ public:
     static FString EnsureDatedSubfolder();
 
     static void MarkAssetAsProcessed(const FString& AssetPath);
+    static void ClearCheckpointMetadata(const FString& AssetPath);
 
 private:
     static FString CurrentFolder;

@@ -961,6 +961,135 @@ USkeletalMeshComponent* FEditingSessionSequencerHelper::GetActiveSkeletalMeshCom
     return ActiveSkeletalMeshComponent.Get();
 }
 
+FString FEditingSessionSequencerHelper::SaveCheckpointForCurrentSequence(const FString& SourceAnimPath, const FString& DestinationFolder)
+{
+#if WITH_EDITOR
+    ULevelSequence* Sequence = GetActiveSequence();
+    if (!Sequence)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot checkpoint: no active sequence."));
+        return FString();
+    }
+
+    const FString SourceSequencePath = Sequence->GetOutermost()->GetName();
+    if (!UEditorAssetLibrary::DoesAssetExist(SourceSequencePath))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot checkpoint: active sequence is not a saved asset: %s"), *SourceSequencePath);
+        return FString();
+    }
+
+    FString TargetFolder = DestinationFolder.IsEmpty() ? TEXT("/Game/ToucanTemp/Checkpoints") : DestinationFolder;
+    TargetFolder = TargetFolder.Replace(TEXT("//"), TEXT("/"));
+    if (!UEditorAssetLibrary::DoesDirectoryExist(TargetFolder))
+    {
+        UEditorAssetLibrary::MakeDirectory(TargetFolder);
+    }
+
+    const FString SourceAnimName = FPaths::GetBaseFilename(SourceAnimPath);
+    const FString BaseCheckpointName = SourceAnimName.IsEmpty()
+        ? FString::Printf(TEXT("%s_Checkpoint"), *Sequence->GetName())
+        : FString::Printf(TEXT("%s_Checkpoint"), *SourceAnimName);
+
+    FString UniquePackageName;
+    FString UniqueAssetName;
+    FAssetToolsModule& AssetToolsModule = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
+    AssetToolsModule.Get().CreateUniqueAssetName(
+        TargetFolder / BaseCheckpointName,
+        TEXT(""),
+        UniquePackageName,
+        UniqueAssetName);
+
+    UObject* DuplicatedAsset = UEditorAssetLibrary::DuplicateAsset(SourceSequencePath, UniquePackageName);
+    ULevelSequence* CheckpointSequence = Cast<ULevelSequence>(DuplicatedAsset);
+    if (!CheckpointSequence)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to duplicate checkpoint sequence from %s to %s."),
+            *SourceSequencePath,
+            *UniquePackageName);
+        return FString();
+    }
+
+    FAssetRegistryModule::AssetCreated(CheckpointSequence);
+    CheckpointSequence->MarkPackageDirty();
+    if (!UEditorAssetLibrary::SaveLoadedAsset(CheckpointSequence, false))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Created checkpoint but failed to save it: %s"), *UniquePackageName);
+        return FString();
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Saved checkpoint sequence: %s"), *UniquePackageName);
+    return UniquePackageName;
+#else
+    return FString();
+#endif
+}
+
+bool FEditingSessionSequencerHelper::OpenCheckpointSequence(const FString& CheckpointPath)
+{
+#if WITH_EDITOR
+    if (CheckpointPath.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot open checkpoint: empty path."));
+        return false;
+    }
+
+    ULevelSequence* Sequence = Cast<ULevelSequence>(UEditorAssetLibrary::LoadAsset(CheckpointPath));
+    if (!Sequence)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Cannot open checkpoint sequence: %s"), *CheckpointPath);
+        return false;
+    }
+
+    SetActiveSequence(Sequence);
+
+    if (UAssetEditorSubsystem* EditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+    {
+        EditorSubsystem->OpenEditorForAsset(Sequence);
+        setLooping(Sequence);
+    }
+
+    ActiveSkeletalMeshComponent = nullptr;
+    UWorld* World = GEditor->GetEditorWorldContext().World();
+    UMovieScene* MovieScene = Sequence->GetMovieScene();
+    if (World && MovieScene)
+    {
+        for (const FMovieSceneBinding& Binding : static_cast<const UMovieScene*>(MovieScene)->GetBindings())
+        {
+            const FMovieScenePossessable* Possessable = MovieScene->FindPossessable(Binding.GetObjectGuid());
+            if (!Possessable || Possessable->GetPossessedObjectClass() != ASkeletalMeshActor::StaticClass())
+            {
+                continue;
+            }
+
+            for (TActorIterator<ASkeletalMeshActor> It(World); It; ++It)
+            {
+                ASkeletalMeshActor* MeshActor = *It;
+                if (!MeshActor || !MeshActor->GetSkeletalMeshComponent())
+                {
+                    continue;
+                }
+
+                if (MeshActor->GetActorLabel() == Possessable->GetName() || MeshActor->GetName() == Possessable->GetName())
+                {
+                    SetActiveSkeletalMeshComponent(MeshActor->GetSkeletalMeshComponent());
+                    break;
+                }
+            }
+
+            if (GetActiveSkeletalMeshComponent())
+            {
+                break;
+            }
+        }
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Opened checkpoint sequence: %s"), *CheckpointPath);
+    return true;
+#else
+    return false;
+#endif
+}
+
 void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath)
 {
 #if WITH_EDITOR

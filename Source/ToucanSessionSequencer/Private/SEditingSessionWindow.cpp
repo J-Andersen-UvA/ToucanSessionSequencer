@@ -150,6 +150,31 @@ namespace
         return Asset && UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True");
     }
 
+    bool TryGetCheckpointPath(const FQueuedAnim& Item, FString& OutCheckpointPath)
+    {
+        OutCheckpointPath.Reset();
+        UObject* Asset = Item.Path.TryLoad();
+        if (!Asset)
+        {
+            return false;
+        }
+
+        const FString Checkpointed = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Checkpointed"));
+        if (!Checkpointed.Equals(TEXT("True"), ESearchCase::IgnoreCase))
+        {
+            return false;
+        }
+
+        OutCheckpointPath = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("CheckpointPath"));
+        return !OutCheckpointPath.IsEmpty() && UEditorAssetLibrary::DoesAssetExist(OutCheckpointPath);
+    }
+
+    bool IsQueuedAnimCheckpointed(const FQueuedAnim& Item)
+    {
+        FString CheckpointPath;
+        return TryGetCheckpointPath(Item, CheckpointPath);
+    }
+
     FString NormalizeMatchString(const FString& InString)
     {
         FString Out;
@@ -471,6 +496,14 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
+                                        .OnClicked(this, &SEditingSessionWindow::OnCheckpointCurrentAnimation)
+                                        [
+                                            AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Checkpoint"), false, true)
+                                        ]
+                                ]
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                                [
+                                    SNew(SButton)
                                         //.Text(FText::FromString(TEXT("Next Animation")))
                                         .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
                                         [
@@ -674,6 +707,10 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                             const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
                             if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
                                 Label += TEXT(" (Already processed?)");
+
+                            FString CheckpointPath;
+                            if (TryGetCheckpointPath(*Item, CheckpointPath))
+                                Label += TEXT(" (Checkpointed)");
                         }
 
                         if (RowIndex == FSeqQueue::Get().GetCurrentIndex())
@@ -695,9 +732,41 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                             const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
                             if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
                                 return FLinearColor::Red;
+
+                            FString CheckpointPath;
+                            if (TryGetCheckpointPath(*Item, CheckpointPath))
+                                return FLinearColor::Yellow;
                         }
 
                         return FLinearColor::White;
+                            })
+                ]
+
+            // --- "Continue from checkpoint" button, only visible if checkpointed ---
+            + SHorizontalBox::Slot()
+                .AutoWidth()
+                .Padding(4.f, 0.f, 0.f, 0.f)
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("continue from checkpoint")))
+                        .Visibility_Lambda([Item]() {
+                        if (!Item.IsValid())
+                            return EVisibility::Collapsed;
+                        return IsQueuedAnimCheckpointed(*Item)
+                            ? EVisibility::Visible
+                            : EVisibility::Collapsed;
+                            })
+                        .OnClicked_Lambda([this, Item]() {
+                        if (Item.IsValid())
+                        {
+                            int32 RowIndex = Rows.IndexOfByKey(Item);
+                            if (RowIndex != INDEX_NONE)
+                            {
+                                ContinueFromCheckpointAtIndex(RowIndex);
+                                RefreshQueue();
+                            }
+                        }
+                        return FReply::Handled();
                             })
                 ]
 
@@ -891,6 +960,107 @@ FReply SEditingSessionWindow::OnBakeSaveAnimation()
     return FReply::Handled();
 }
 
+FReply SEditingSessionWindow::OnCheckpointCurrentAnimation()
+{
+    const auto& All = FSeqQueue::Get().GetAll();
+    if (!All.IsValidIndex(FSeqQueue::Get().GetCurrentIndex()))
+        return FReply::Handled();
+
+    const FQueuedAnim CurrentAnim = All[FSeqQueue::Get().GetCurrentIndex()];
+    const FString SourceAnimPath = CurrentAnim.Path.ToString();
+
+    UObject* SourceAsset = UEditorAssetLibrary::LoadAsset(SourceAnimPath);
+    if (!SourceAsset)
+    {
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::Format(
+                FText::FromString(TEXT("Failed to load source animation asset:\n\n{0}")),
+                FText::FromString(SourceAnimPath)
+            )
+        );
+        return FReply::Handled();
+    }
+
+    const FString DefaultCheckpointFolder = TEXT("/Game/ToucanTemp/Checkpoints");
+    if (!UEditorAssetLibrary::DoesDirectoryExist(DefaultCheckpointFolder))
+    {
+        UEditorAssetLibrary::MakeDirectory(DefaultCheckpointFolder);
+    }
+
+    TSharedPtr<FString> PickedContentFolder = MakeShared<FString>(DefaultCheckpointFolder);
+
+    FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+    IContentBrowserSingleton& ContentBrowser = ContentBrowserModule.Get();
+
+    FPathPickerConfig PathPickerConfig;
+    PathPickerConfig.DefaultPath = DefaultCheckpointFolder;
+    PathPickerConfig.bAllowContextMenu = true;
+    PathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([PickedContentFolder](const FString& SelectedPath)
+    {
+        *PickedContentFolder = SelectedPath;
+    });
+
+    TSharedRef<SWindow> PickerWindow = SNew(SWindow)
+        .Title(FText::FromString(TEXT("Save Checkpoint Sequence")))
+        .ClientSize(FVector2D(450, 400))
+        .SupportsMinimize(false)
+        .SupportsMaximize(false);
+
+    PickerWindow->SetContent(
+        SNew(SVerticalBox)
+        + SVerticalBox::Slot().FillHeight(1.f)
+        [
+            ContentBrowser.CreatePathPicker(PathPickerConfig)
+        ]
+        + SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot().AutoWidth()
+            [
+                SNew(SButton)
+                    .Text(FText::FromString(TEXT("OK")))
+                    .OnClicked_Lambda([this, PickerWindow, PickedContentFolder, SourceAnimPath]()
+                    {
+                        const FString CheckpointPath = FEditingSessionSequencerHelper::SaveCheckpointForCurrentSequence(
+                            SourceAnimPath,
+                            *PickedContentFolder);
+
+                        if (CheckpointPath.IsEmpty())
+                        {
+                            FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(TEXT("Failed to save checkpoint sequence.")));
+                            return FReply::Handled();
+                        }
+
+                        UObject* Asset = UEditorAssetLibrary::LoadAsset(SourceAnimPath);
+                        if (Asset)
+                        {
+                            UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Checkpointed"), TEXT("True"));
+                            UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("CheckpointPath"), CheckpointPath);
+                            UEditorAssetLibrary::SaveLoadedAsset(Asset, false);
+                        }
+
+                        PickerWindow->RequestDestroyWindow();
+                        RefreshQueue();
+                        return FReply::Handled();
+                    })
+            ]
+            + SHorizontalBox::Slot().AutoWidth().Padding(8, 0, 0, 0)
+            [
+                SNew(SButton)
+                    .Text(FText::FromString(TEXT("Cancel")))
+                    .OnClicked_Lambda([PickerWindow]()
+                    {
+                        PickerWindow->RequestDestroyWindow();
+                        return FReply::Handled();
+                    })
+            ]
+        ]);
+
+    FSlateApplication::Get().AddWindow(PickerWindow);
+    return FReply::Handled();
+}
+
 FReply SEditingSessionWindow::OnLoadNextAnimation()
 {
     const auto& All = FSeqQueue::Get().GetAll();
@@ -924,6 +1094,24 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
     }
 
     FSeqQueue::Get().SetCurrentIndex(NextUnprocessedIndex);
+
+    FString CheckpointPath;
+    if (TryGetCheckpointPath(All[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+    {
+        const EAppReturnType::Type Response = FMessageDialog::Open(
+            EAppMsgType::YesNo,
+            FText::Format(
+                FText::FromString(TEXT("This animation has a checkpoint:\n\n{0}\n\nUse the checkpoint?\n\nYes: continue from checkpoint\nNo: start over from the source animation")),
+                FText::FromString(CheckpointPath)
+            ),
+            FText::FromString(TEXT("Checkpoint Found")));
+
+        if (Response == EAppReturnType::Yes)
+        {
+            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
+            return FReply::Handled();
+        }
+    }
 
     // Load animation asset
     UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
@@ -1076,6 +1264,42 @@ bool SEditingSessionWindow::LoadBestMatchedVideoForCurrent()
     return true;
 }
 
+void SEditingSessionWindow::ContinueFromCheckpointAtIndex(int32 TargetIndex)
+{
+    const auto& All = FSeqQueue::Get().GetAll();
+    if (!All.IsValidIndex(TargetIndex))
+        return;
+
+    FString CheckpointPath;
+    if (!TryGetCheckpointPath(All[TargetIndex], CheckpointPath))
+    {
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::FromString(TEXT("This queue item does not have a valid checkpoint sequence."))
+        );
+        return;
+    }
+
+    FSeqQueue::Get().SetCurrentIndex(TargetIndex);
+
+    if (ListView.IsValid())
+        ListView->RebuildList();
+
+    if (!FEditingSessionSequencerHelper::OpenCheckpointSequence(CheckpointPath))
+    {
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::Format(
+                FText::FromString(TEXT("Failed to open checkpoint sequence:\n\n{0}")),
+                FText::FromString(CheckpointPath)
+            )
+        );
+        return;
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Continued queue item %d from checkpoint: %s"), TargetIndex, *CheckpointPath);
+}
+
 void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
 {
     const auto& All = FSeqQueue::Get().GetAll();
@@ -1122,6 +1346,24 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
         if (Response == EAppReturnType::No)
         {
             UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Skipped processed animation: %s"), *AnimPath);
+            return;
+        }
+    }
+
+    FString CheckpointPath;
+    if (TryGetCheckpointPath(All[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+    {
+        const EAppReturnType::Type Response = FMessageDialog::Open(
+            EAppMsgType::YesNo,
+            FText::Format(
+                FText::FromString(TEXT("This animation has a checkpoint:\n\n{0}\n\nUse the checkpoint?\n\nYes: continue from checkpoint\nNo: start over from the source animation")),
+                FText::FromString(CheckpointPath)
+            ),
+            FText::FromString(TEXT("Checkpoint Found")));
+
+        if (Response == EAppReturnType::Yes)
+        {
+            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
             return;
         }
     }
