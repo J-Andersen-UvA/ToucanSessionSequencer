@@ -498,7 +498,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                     SNew(SButton)
                                         .OnClicked(this, &SEditingSessionWindow::OnCheckpointCurrentAnimation)
                                         [
-                                            AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Checkpoint"), false, true)
+                                            AddIconAndTextHere(TEXT("Sequencer.Tracks.Event"), TEXT("Checkpoint"), false, true)
                                         ]
                                 ]
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
@@ -748,7 +748,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                 .Padding(4.f, 0.f, 0.f, 0.f)
                 [
                     SNew(SButton)
-                        .Text(FText::FromString(TEXT("continue from checkpoint")))
+                        .Text(FText::FromString(TEXT("Continue from checkpoint")))
                         .Visibility_Lambda([Item]() {
                         if (!Item.IsValid())
                             return EVisibility::Collapsed;
