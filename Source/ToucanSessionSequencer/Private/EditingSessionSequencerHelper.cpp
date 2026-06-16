@@ -1092,6 +1092,11 @@ bool FEditingSessionSequencerHelper::OpenCheckpointSequence(const FString& Check
 
 void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath)
 {
+    BakeAndSaveAnimation(AnimName, SourceAnimPath, FString());
+}
+
+void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath, const FString& DestinationFolder)
+{
 #if WITH_EDITOR
     // Active sequence
     ULevelSequence* Sequence = FEditingSessionSequencerHelper::GetActiveSequence();
@@ -1169,7 +1174,22 @@ void FEditingSessionSequencerHelper::BakeAndSaveAnimation(const FString& AnimNam
     }
 
     // Create target AnimSequence asset
-    const FString Folder = FOutputHelper::EnsureDatedSubfolder();
+    FString Folder = DestinationFolder.IsEmpty()
+        ? FOutputHelper::EnsureDatedSubfolder()
+        : DestinationFolder.Replace(TEXT("//"), TEXT("/"));
+
+    if (!Folder.StartsWith(TEXT("/Game")))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Bake destination must be a content folder: %s"), *Folder);
+        AnimSettings->DefaultFrameRate = OriginalRate;
+        return;
+    }
+
+    if (!UEditorAssetLibrary::DoesDirectoryExist(Folder))
+    {
+        UEditorAssetLibrary::MakeDirectory(Folder);
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created bake output folder: %s"), *Folder);
+    }
 
     FAssetToolsModule& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools");
     UAnimSequenceFactory* Factory = NewObject<UAnimSequenceFactory>();

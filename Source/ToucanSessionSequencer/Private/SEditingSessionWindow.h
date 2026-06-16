@@ -44,6 +44,7 @@ private:
     FReply OnSelectOutputFolder();
     FReply OnSelectVideoFolder();
     FReply OnBakeSaveAnimation();
+    FReply OnBakeSaveAnimationTo();
     FReply OnCheckpointCurrentAnimation();
     FReply OnLoadNextAnimation();
     FReply OnLoadVideoForCurrent();
@@ -64,12 +65,14 @@ private:
     TSoftObjectPtr<USkeletalMesh> SelectedMesh;
     TSoftObjectPtr<UObject> SelectedRig;
     FString SelectedVideoFolder;
+    FString BakeSaveToFolder;
 
     // Config keys
     static constexpr const TCHAR* CfgSection = TEXT("ToucanEditingSession");
     static constexpr const TCHAR* MeshKey = TEXT("LastSelectedMesh");
     static constexpr const TCHAR* RigKey = TEXT("LastSelectedRig");
     static constexpr const TCHAR* VideoFolderKey = TEXT("LastSelectedVideoFolder");
+    static constexpr const TCHAR* BakeSaveToFolderKey = TEXT("LastBakeSaveToFolder");
 
     void LoadSettings();
     void SaveSettings() const;

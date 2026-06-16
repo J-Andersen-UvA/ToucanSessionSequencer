@@ -1,5 +1,6 @@
 #include "SEditingSessionWindow.h"
 #include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Views/SListView.h"
@@ -501,6 +502,10 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                             AddIconAndTextHere(TEXT("Sequencer.Tracks.Event"), TEXT("Checkpoint"), false, true)
                                         ]
                                 ]
+                                + SHorizontalBox::Slot().FillWidth(1.f)
+                                [
+                                    SNew(SSpacer)
+                                ]
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
@@ -508,6 +513,14 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                         .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
                                         [
                                             AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Todo"), false, true)
+                                        ]
+                                ]
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+                                [
+                                    SNew(SButton)
+                                        .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimationTo)
+                                        [
+                                            AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Bake & Save To"), false, true)
                                         ]
                                 ]
                         ]
@@ -615,10 +628,11 @@ void SEditingSessionWindow::LoadSettings()
     const FString& Ini = GGameIni;
 #endif
 
-    FString MeshPath, RigPath, VideoFolderPath;
+    FString MeshPath, RigPath, VideoFolderPath, BakeSaveToFolderPath;
     GConfig->GetString(CfgSection, MeshKey, MeshPath, Ini);
     GConfig->GetString(CfgSection, RigKey, RigPath, Ini);
     GConfig->GetString(CfgSection, VideoFolderKey, VideoFolderPath, Ini);
+    GConfig->GetString(CfgSection, BakeSaveToFolderKey, BakeSaveToFolderPath, Ini);
 
     if (!MeshPath.IsEmpty())
         SelectedMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(MeshPath));
@@ -628,6 +642,8 @@ void SEditingSessionWindow::LoadSettings()
 
     if (!VideoFolderPath.IsEmpty())
         SelectedVideoFolder = VideoFolderPath;
+
+    BakeSaveToFolder = BakeSaveToFolderPath.IsEmpty() ? FOutputHelper::Get() : BakeSaveToFolderPath;
 }
 
 void SEditingSessionWindow::SaveSettings() const
@@ -646,6 +662,7 @@ void SEditingSessionWindow::SaveSettings() const
         GConfig->SetString(CfgSection, RigKey, *RigPath.ToString(), Ini);
 
     GConfig->SetString(CfgSection, VideoFolderKey, *SelectedVideoFolder, Ini);
+    GConfig->SetString(CfgSection, BakeSaveToFolderKey, *BakeSaveToFolder, Ini);
     GConfig->Flush(false, Ini);
 }
 
@@ -957,6 +974,84 @@ FReply SEditingSessionWindow::OnBakeSaveAnimation()
     FString AnimName = FPaths::GetBaseFilename(SourceAnimPath);
 
     FEditingSessionSequencerHelper::BakeAndSaveAnimation(AnimName, SourceAnimPath);
+    return FReply::Handled();
+}
+
+FReply SEditingSessionWindow::OnBakeSaveAnimationTo()
+{
+    const auto& All = FSeqQueue::Get().GetAll();
+    if (!All.IsValidIndex(FSeqQueue::Get().GetCurrentIndex()))
+        return FReply::Handled();
+
+    const FQueuedAnim CurrentAnim = All[FSeqQueue::Get().GetCurrentIndex()];
+    const FString SourceAnimPath = CurrentAnim.Path.ToString();
+    const FString AnimName = FPaths::GetBaseFilename(SourceAnimPath);
+
+    const FString DefaultBakeFolder = BakeSaveToFolder.IsEmpty() ? FOutputHelper::Get() : BakeSaveToFolder;
+    TSharedPtr<FString> PickedContentFolder = MakeShared<FString>(DefaultBakeFolder);
+
+    FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>("ContentBrowser");
+    IContentBrowserSingleton& ContentBrowser = ContentBrowserModule.Get();
+
+    FPathPickerConfig PathPickerConfig;
+    PathPickerConfig.DefaultPath = DefaultBakeFolder;
+    PathPickerConfig.bAllowContextMenu = true;
+    PathPickerConfig.OnPathSelected = FOnPathSelected::CreateLambda([PickedContentFolder](const FString& SelectedPath)
+    {
+        *PickedContentFolder = SelectedPath;
+    });
+
+    TSharedRef<SWindow> PickerWindow = SNew(SWindow)
+        .Title(FText::FromString(TEXT("Bake & Save Animation To")))
+        .ClientSize(FVector2D(450, 400))
+        .SupportsMinimize(false)
+        .SupportsMaximize(false);
+
+    PickerWindow->SetContent(
+        SNew(SVerticalBox)
+        + SVerticalBox::Slot().FillHeight(1.f)
+        [
+            ContentBrowser.CreatePathPicker(PathPickerConfig)
+        ]
+        + SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+        [
+            SNew(SHorizontalBox)
+            + SHorizontalBox::Slot().AutoWidth()
+            [
+                SNew(SButton)
+                    .Text(FText::FromString(TEXT("OK")))
+                    .OnClicked_Lambda([this, PickerWindow, PickedContentFolder, AnimName, SourceAnimPath]()
+                    {
+                        const FString DestinationFolder = PickedContentFolder.IsValid()
+                            ? PickedContentFolder->Replace(TEXT("//"), TEXT("/"))
+                            : FString();
+
+                        PickerWindow->RequestDestroyWindow();
+
+                        if (DestinationFolder.IsEmpty())
+                            return FReply::Handled();
+
+                        BakeSaveToFolder = DestinationFolder;
+                        SaveSettings();
+
+                        FEditingSessionSequencerHelper::BakeAndSaveAnimation(AnimName, SourceAnimPath, DestinationFolder);
+                        return FReply::Handled();
+                    })
+            ]
+            + SHorizontalBox::Slot().AutoWidth().Padding(8, 0, 0, 0)
+            [
+                SNew(SButton)
+                    .Text(FText::FromString(TEXT("Cancel")))
+                    .OnClicked_Lambda([PickerWindow]()
+                    {
+                        PickerWindow->RequestDestroyWindow();
+                        return FReply::Handled();
+                    })
+            ]
+        ]
+    );
+
+    FSlateApplication::Get().AddWindow(PickerWindow);
     return FReply::Handled();
 }
 

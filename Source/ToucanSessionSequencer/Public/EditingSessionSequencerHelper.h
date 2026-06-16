@@ -36,6 +36,7 @@ public:
     static void SetActiveSkeletalMeshComponent(USkeletalMeshComponent* InComp);
     static USkeletalMeshComponent* GetActiveSkeletalMeshComponent();
     static void BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath);
+    static void BakeAndSaveAnimation(const FString& AnimName, const FString& SourceAnimPath, const FString& DestinationFolder);
     static FString SaveCheckpointForCurrentSequence(const FString& SourceAnimPath, const FString& DestinationFolder);
     static bool OpenCheckpointSequence(const FString& CheckpointPath);
     static void LoadVideoForCurrentSequence(const FString& VideoFilePath);
