@@ -147,33 +147,54 @@ namespace
 {
     bool IsQueuedAnimProcessed(const FQueuedAnim& Item)
     {
-        UObject* Asset = Item.Path.TryLoad();
-        return Asset && UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True");
+        return Item.bProcessed;
     }
 
     bool TryGetCheckpointPath(const FQueuedAnim& Item, FString& OutCheckpointPath)
     {
         OutCheckpointPath.Reset();
-        UObject* Asset = Item.Path.TryLoad();
-        if (!Asset)
-        {
+        if (!Item.bCheckpointed || Item.CheckpointPath.IsEmpty())
             return false;
-        }
 
-        const FString Checkpointed = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Checkpointed"));
-        if (!Checkpointed.Equals(TEXT("True"), ESearchCase::IgnoreCase))
-        {
-            return false;
-        }
-
-        OutCheckpointPath = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("CheckpointPath"));
-        return !OutCheckpointPath.IsEmpty() && UEditorAssetLibrary::DoesAssetExist(OutCheckpointPath);
+        OutCheckpointPath = Item.CheckpointPath;
+        return UEditorAssetLibrary::DoesAssetExist(OutCheckpointPath);
     }
 
     bool IsQueuedAnimCheckpointed(const FQueuedAnim& Item)
     {
         FString CheckpointPath;
         return TryGetCheckpointPath(Item, CheckpointPath);
+    }
+
+    void SyncQueueStatusFromLoadedAsset(const FQueuedAnim& Item, UObject* Asset)
+    {
+        if (!Asset)
+            return;
+
+        FSeqQueue& Queue = FSeqQueue::Get();
+
+        const FString Checkpointed = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Checkpointed"));
+        const FString CheckpointPath = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("CheckpointPath"));
+        if (Checkpointed.Equals(TEXT("True"), ESearchCase::IgnoreCase) &&
+            !CheckpointPath.IsEmpty() &&
+            UEditorAssetLibrary::DoesAssetExist(CheckpointPath))
+        {
+            Queue.SetProcessed(Item.Path, false);
+            Queue.SetCheckpoint(Item.Path, CheckpointPath);
+            return;
+        }
+
+        Queue.ClearCheckpoint(Item.Path);
+
+        const FString Processed = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
+        if (Processed.Equals(TEXT("True"), ESearchCase::IgnoreCase))
+        {
+            Queue.SetProcessed(Item.Path, true);
+        }
+        else
+        {
+            Queue.SetProcessed(Item.Path, false);
+        }
     }
 
     FString NormalizeMatchString(const FString& InString)
@@ -718,17 +739,12 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                         int32 RowIndex = Rows.IndexOfByKey(Item);
                         FString Label = Item->DisplayName.ToString();
 
-                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
-                        if (Asset)
-                        {
-                            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
-                            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
-                                Label += TEXT(" (Already processed?)");
+                        if (IsQueuedAnimProcessed(*Item))
+                            Label += TEXT(" (Already processed?)");
 
-                            FString CheckpointPath;
-                            if (TryGetCheckpointPath(*Item, CheckpointPath))
-                                Label += TEXT(" (Checkpointed)");
-                        }
+                        FString CheckpointPath;
+                        if (TryGetCheckpointPath(*Item, CheckpointPath))
+                            Label += TEXT(" (Checkpointed)");
 
                         if (RowIndex == FSeqQueue::Get().GetCurrentIndex())
                             Label += TEXT("  <-- editing");
@@ -743,17 +759,12 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                         if (RowIndex == FSeqQueue::Get().GetCurrentIndex())
                             return FLinearColor(0.2f, 0.4f, 1.0f); // blue highlight
 
-                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
-                        if (Asset)
-                        {
-                            const FString TagValue = UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed"));
-                            if (TagValue.Equals(TEXT("True"), ESearchCase::IgnoreCase))
-                                return FLinearColor::Red;
+                        if (IsQueuedAnimProcessed(*Item))
+                            return FLinearColor::Red;
 
-                            FString CheckpointPath;
-                            if (TryGetCheckpointPath(*Item, CheckpointPath))
-                                return FLinearColor::Yellow;
-                        }
+                        FString CheckpointPath;
+                        if (TryGetCheckpointPath(*Item, CheckpointPath))
+                            return FLinearColor::Yellow;
 
                         return FLinearColor::White;
                             })
@@ -796,10 +807,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                         .Visibility_Lambda([Item]() {
                         if (!Item.IsValid())
                             return EVisibility::Collapsed;
-                        UObject* Asset = UEditorAssetLibrary::LoadAsset(Item->Path.ToString());
-                        if (!Asset)
-                            return EVisibility::Collapsed;
-                        return UEditorAssetLibrary::GetMetadataTag(Asset, TEXT("Processed")) == TEXT("True")
+                        return IsQueuedAnimProcessed(*Item)
                             ? EVisibility::Visible
                             : EVisibility::Collapsed;
                             })
@@ -811,7 +819,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                             {
                                 UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("False"));
                                 UEditorAssetLibrary::SaveLoadedAsset(Asset);
-                                FSeqQueue::Get().RefreshProcessedCount(); // Update progress bar
+                                FSeqQueue::Get().SetProcessed(Item->Path, false);
                                 RefreshQueue();
                             }
                         }
@@ -1130,10 +1138,14 @@ FReply SEditingSessionWindow::OnCheckpointCurrentAnimation()
                         UObject* Asset = UEditorAssetLibrary::LoadAsset(SourceAnimPath);
                         if (Asset)
                         {
+                            UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Processed"), TEXT("False"));
                             UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Checkpointed"), TEXT("True"));
                             UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("CheckpointPath"), CheckpointPath);
                             UEditorAssetLibrary::SaveLoadedAsset(Asset, false);
                         }
+
+                        FSeqQueue::Get().SetProcessed(FSoftObjectPath(SourceAnimPath), false);
+                        FSeqQueue::Get().SetCheckpoint(FSoftObjectPath(SourceAnimPath), CheckpointPath);
 
                         PickerWindow->RequestDestroyWindow();
                         RefreshQueue();
@@ -1190,9 +1202,11 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
     FSeqQueue::Get().SetCurrentIndex(NextUnprocessedIndex);
 
+    bool bCheckpointPromptAlreadyShown = false;
     FString CheckpointPath;
     if (TryGetCheckpointPath(All[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
     {
+        bCheckpointPromptAlreadyShown = true;
         const EAppReturnType::Type Response = FMessageDialog::Open(
             EAppMsgType::YesNo,
             FText::Format(
@@ -1226,6 +1240,45 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to load animation asset: %s"), *AnimPath);
         return FReply::Handled();
+    }
+
+    SyncQueueStatusFromLoadedAsset(All[FSeqQueue::Get().GetCurrentIndex()], AnimObject);
+    if (!bCheckpointPromptAlreadyShown &&
+        TryGetCheckpointPath(FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+    {
+        const EAppReturnType::Type Response = FMessageDialog::Open(
+            EAppMsgType::YesNo,
+            FText::Format(
+                FText::FromString(TEXT("This animation has a checkpoint:\n\n{0}\n\nUse the checkpoint?\n\nYes: continue from checkpoint\nNo: start over from the source animation")),
+                FText::FromString(CheckpointPath)
+            ),
+            FText::FromString(TEXT("Checkpoint Found")));
+
+        if (Response == EAppReturnType::Yes)
+        {
+            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
+            return FReply::Handled();
+        }
+    }
+
+    if (FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()].bProcessed)
+    {
+        const FString AnimName = AnimObject->GetName();
+        const FString AnimPath = FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
+
+        const EAppReturnType::Type Response = FMessageDialog::Open(
+            EAppMsgType::YesNo,
+            FText::Format(
+                FText::FromString(TEXT("Animation:\t'{0}'\nPath:\t'{1}'\nNote:\tis marked as 'Processed'.\nAction:\tdo you want to load it anyway?")),
+                FText::FromString(AnimName),
+                FText::FromString(AnimPath)
+            ),
+            FText::FromString(TEXT("Processed Animation Detected")));
+
+        if (Response == EAppReturnType::No)
+        {
+            return FReply::Handled();
+        }
     }
 
     UAnimSequence* Anim = Cast<UAnimSequence>(AnimObject);
@@ -1424,8 +1477,28 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
         return;
     }
 
+    SyncQueueStatusFromLoadedAsset(All[FSeqQueue::Get().GetCurrentIndex()], AnimObject);
+
+    FString CheckpointPath;
+    if (TryGetCheckpointPath(FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+    {
+        const EAppReturnType::Type Response = FMessageDialog::Open(
+            EAppMsgType::YesNo,
+            FText::Format(
+                FText::FromString(TEXT("This animation has a checkpoint:\n\n{0}\n\nUse the checkpoint?\n\nYes: continue from checkpoint\nNo: start over from the source animation")),
+                FText::FromString(CheckpointPath)
+            ),
+            FText::FromString(TEXT("Checkpoint Found")));
+
+        if (Response == EAppReturnType::Yes)
+        {
+            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
+            return;
+        }
+    }
+
     // Check for "Processed" metadata
-    if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
+    if (FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()].bProcessed)
     {
         const FString AnimName = AnimObject->GetName();
         const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
@@ -1441,24 +1514,6 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
         if (Response == EAppReturnType::No)
         {
             UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Skipped processed animation: %s"), *AnimPath);
-            return;
-        }
-    }
-
-    FString CheckpointPath;
-    if (TryGetCheckpointPath(All[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
-    {
-        const EAppReturnType::Type Response = FMessageDialog::Open(
-            EAppMsgType::YesNo,
-            FText::Format(
-                FText::FromString(TEXT("This animation has a checkpoint:\n\n{0}\n\nUse the checkpoint?\n\nYes: continue from checkpoint\nNo: start over from the source animation")),
-                FText::FromString(CheckpointPath)
-            ),
-            FText::FromString(TEXT("Checkpoint Found")));
-
-        if (Response == EAppReturnType::Yes)
-        {
-            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
             return;
         }
     }

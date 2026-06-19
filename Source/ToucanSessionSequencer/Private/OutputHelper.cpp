@@ -82,8 +82,7 @@ void FOutputHelper::MarkAssetAsProcessed(const FString& AssetPath)
     if (UEditorAssetLibrary::SaveAsset(AssetPath))
     {
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Marked %s as Processed=True"), *AssetPath);
-        // Invalidate the processed count cache to update progress bar
-        FSeqQueue::Get().RefreshProcessedCount();
+        FSeqQueue::Get().SetProcessed(FSoftObjectPath(AssetPath), true);
     }
     else
     {
@@ -103,4 +102,5 @@ void FOutputHelper::ClearCheckpointMetadata(const FString& AssetPath)
     UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("Checkpointed"), TEXT("False"));
     UEditorAssetLibrary::SetMetadataTag(Asset, TEXT("CheckpointPath"), TEXT(""));
     UEditorAssetLibrary::SaveAsset(AssetPath);
+    FSeqQueue::Get().ClearCheckpoint(FSoftObjectPath(AssetPath));
 }

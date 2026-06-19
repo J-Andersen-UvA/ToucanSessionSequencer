@@ -117,11 +117,7 @@ void FQueueControls::RemoveMarkedProcessedAnimations()
 
     for (int32 i = All.Num() - 1; i >= 0; --i)
     {
-        UObject* AnimObject = All[i].Path.TryLoad();
-        if (!AnimObject)
-            continue;
-
-        if (UEditorAssetLibrary::GetMetadataTag(AnimObject, TEXT("Processed")) == TEXT("True"))
+        if (All[i].bProcessed)
         {
             Queue.RemoveAt(i);
             ++RemovedCount;

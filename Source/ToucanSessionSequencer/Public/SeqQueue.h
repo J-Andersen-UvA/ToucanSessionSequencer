@@ -1,11 +1,16 @@
 #pragma once
 #include "CoreMinimal.h"
 
+struct FAssetData;
+
 /** Storage format for each queued animation */
 struct FQueuedAnim
 {
     FSoftObjectPath Path;
     FText DisplayName; // nice name for UI
+    bool bProcessed = false;
+    bool bCheckpointed = false;
+    FString CheckpointPath;
 
     bool operator==(const FQueuedAnim& Other) const
     { return Path == Other.Path; }
@@ -46,6 +51,11 @@ public:
     int32 GetTotalCount() const { return Items.Num(); }
     int32 GetProcessedCount();
     void RefreshProcessedCount(); // Call this after marking animations as processed
+    bool IsProcessed(const FSoftObjectPath& Path) const;
+    bool TryGetCheckpointPath(const FSoftObjectPath& Path, FString& OutCheckpointPath) const;
+    void SetProcessed(const FSoftObjectPath& Path, bool bProcessed);
+    void SetCheckpoint(const FSoftObjectPath& Path, const FString& CheckpointPath);
+    void ClearCheckpoint(const FSoftObjectPath& Path);
     
 private:
     int32 CurrentIndex = INDEX_NONE;
@@ -55,6 +65,7 @@ private:
     bool CheckBoundsIndex(int32 Index) const { return Index >= 0 && Index < Items.Num(); }
 
     static FText MakeDisplayName(const FAssetData& A);
+    int32 FindIndexByPath(const FSoftObjectPath& Path) const;
 
 private:
     TArray<FQueuedAnim> Items;
