@@ -17,6 +17,30 @@
         {
             "Name": "SequencerAbstraction",
             "Enabled": true
+        },
+        {
+            "Name": "EditorScriptingUtilities",
+            "Enabled": true
+        },
+        {
+            "Name": "LevelSequenceEditor",
+            "Enabled": true
+        },
+        {
+            "Name": "SequencerScripting",
+            "Enabled": true
+        },
+        {
+            "Name": "ControlRig",
+            "Enabled": true
+        },
+        {
+            "Name": "MediaCompositing",
+            "Enabled": true
+        },
+        {
+            "Name": "MediaPlate",
+            "Enabled": true
         }
     ]
 }
