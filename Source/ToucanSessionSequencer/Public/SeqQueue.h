@@ -20,7 +20,6 @@ namespace SeqCfg
 {
     inline constexpr const TCHAR* Section = TEXT("ToucanSequencer");
     inline constexpr const TCHAR* Key     = TEXT("Queue"); // array of soft paths
-    inline constexpr const TCHAR* CurrentIndexKey = TEXT("CurrentIndex");
 }
 
 /** Tiny, editor-only, in-memory queue with config persistence */

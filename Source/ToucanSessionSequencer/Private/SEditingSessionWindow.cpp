@@ -233,6 +233,8 @@ namespace
 
 void SEditingSessionWindow::Construct(const FArguments&)
 {
+    // The current item represents this editing window's active sequence, not persisted queue state.
+    FSeqQueue::Get().SetCurrentIndex(INDEX_NONE);
     RefreshQueue();
     FSeqQueue::Get().OnQueueChanged().AddSP(this, &SEditingSessionWindow::RefreshQueue);
 
@@ -697,9 +699,7 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                         int32 RowIndex = Rows.IndexOfByKey(Item);
                         if (RowIndex != INDEX_NONE)
                         {
-                            FSeqQueue::Get().SetCurrentIndex(RowIndex);
                             LoadAnimationAtIndex(RowIndex);
-                            RefreshQueue();
                         }
                         return FReply::Handled();
                             })
@@ -1212,11 +1212,9 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         return FReply::Handled();
     }
 
-    FSeqQueue::Get().SetCurrentIndex(NextUnprocessedIndex);
-
     bool bCheckpointPromptAlreadyShown = false;
     FString CheckpointPath;
-    if (TryGetCheckpointPath(All[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+    if (TryGetCheckpointPath(All[NextUnprocessedIndex], CheckpointPath))
     {
         bCheckpointPromptAlreadyShown = true;
         const EAppReturnType::Type Response = FMessageDialog::Open(
@@ -1229,18 +1227,18 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
         if (Response == EAppReturnType::Yes)
         {
-            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
+            ContinueFromCheckpointAtIndex(NextUnprocessedIndex);
             return FReply::Handled();
         }
     }
 
     // Load animation asset
-    UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
+    UObject* AnimObject = All[NextUnprocessedIndex].Path.TryLoad();
     
     // Notify if failed to load
     if (!AnimObject)
     {
-        const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
+        const FString AnimPath = All[NextUnprocessedIndex].Path.ToString();
 
         FMessageDialog::Open(
             EAppMsgType::Ok,
@@ -1254,9 +1252,9 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         return FReply::Handled();
     }
 
-    SyncQueueStatusFromLoadedAsset(All[FSeqQueue::Get().GetCurrentIndex()], AnimObject);
+    SyncQueueStatusFromLoadedAsset(All[NextUnprocessedIndex], AnimObject);
     if (!bCheckpointPromptAlreadyShown &&
-        TryGetCheckpointPath(FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+        TryGetCheckpointPath(FSeqQueue::Get().GetAll()[NextUnprocessedIndex], CheckpointPath))
     {
         const EAppReturnType::Type Response = FMessageDialog::Open(
             EAppMsgType::YesNo,
@@ -1268,15 +1266,15 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
         if (Response == EAppReturnType::Yes)
         {
-            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
+            ContinueFromCheckpointAtIndex(NextUnprocessedIndex);
             return FReply::Handled();
         }
     }
 
-    if (FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()].bProcessed)
+    if (FSeqQueue::Get().GetAll()[NextUnprocessedIndex].bProcessed)
     {
         const FString AnimName = AnimObject->GetName();
-        const FString AnimPath = FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
+        const FString AnimPath = FSeqQueue::Get().GetAll()[NextUnprocessedIndex].Path.ToString();
 
         const EAppReturnType::Type Response = FMessageDialog::Open(
             EAppMsgType::YesNo,
@@ -1304,6 +1302,7 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
     // Delegate to helper
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+    FSeqQueue::Get().SetCurrentIndex(NextUnprocessedIndex);
     LoadBestMatchedVideoForCurrent();
 
     return FReply::Handled();
@@ -1440,11 +1439,6 @@ void SEditingSessionWindow::ContinueFromCheckpointAtIndex(int32 TargetIndex)
         return;
     }
 
-    FSeqQueue::Get().SetCurrentIndex(TargetIndex);
-
-    if (ListView.IsValid())
-        ListView->RebuildList();
-
     if (!FEditingSessionSequencerHelper::OpenCheckpointSequence(CheckpointPath))
     {
         FMessageDialog::Open(
@@ -1457,6 +1451,7 @@ void SEditingSessionWindow::ContinueFromCheckpointAtIndex(int32 TargetIndex)
         return;
     }
 
+    FSeqQueue::Get().SetCurrentIndex(TargetIndex);
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Continued queue item %d from checkpoint: %s"), TargetIndex, *CheckpointPath);
 }
 
@@ -1466,16 +1461,11 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     if (!All.IsValidIndex(TargetIndex))
         return;
 
-    FSeqQueue::Get().SetCurrentIndex(TargetIndex);
-
-    if (ListView.IsValid())
-        ListView->RebuildList();
-
-    UObject* AnimObject = All[FSeqQueue::Get().GetCurrentIndex()].Path.TryLoad();
+    UObject* AnimObject = All[TargetIndex].Path.TryLoad();
 
     if (!AnimObject)
     {
-        const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
+        const FString AnimPath = All[TargetIndex].Path.ToString();
 
         FMessageDialog::Open(
             EAppMsgType::Ok,
@@ -1489,10 +1479,10 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
         return;
     }
 
-    SyncQueueStatusFromLoadedAsset(All[FSeqQueue::Get().GetCurrentIndex()], AnimObject);
+    SyncQueueStatusFromLoadedAsset(All[TargetIndex], AnimObject);
 
     FString CheckpointPath;
-    if (TryGetCheckpointPath(FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()], CheckpointPath))
+    if (TryGetCheckpointPath(FSeqQueue::Get().GetAll()[TargetIndex], CheckpointPath))
     {
         const EAppReturnType::Type Response = FMessageDialog::Open(
             EAppMsgType::YesNo,
@@ -1504,16 +1494,16 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
 
         if (Response == EAppReturnType::Yes)
         {
-            ContinueFromCheckpointAtIndex(FSeqQueue::Get().GetCurrentIndex());
+            ContinueFromCheckpointAtIndex(TargetIndex);
             return;
         }
     }
 
     // Check for "Processed" metadata
-    if (FSeqQueue::Get().GetAll()[FSeqQueue::Get().GetCurrentIndex()].bProcessed)
+    if (FSeqQueue::Get().GetAll()[TargetIndex].bProcessed)
     {
         const FString AnimName = AnimObject->GetName();
-        const FString AnimPath = All[FSeqQueue::Get().GetCurrentIndex()].Path.ToString();
+        const FString AnimPath = All[TargetIndex].Path.ToString();
 
         const FText Title = FText::FromString(TEXT("Processed Animation Detected"));
         const FText Message = FText::Format(
@@ -1540,9 +1530,10 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     UObject* RigObj = SelectedRig.LoadSynchronous();
 
     FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+    FSeqQueue::Get().SetCurrentIndex(TargetIndex);
     LoadBestMatchedVideoForCurrent();
 
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), FSeqQueue::Get().GetCurrentIndex(), *Anim->GetName());
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), TargetIndex, *Anim->GetName());
 }
 
 FString SEditingSessionWindow::GetCurrentConfiguredOutputFolder() const

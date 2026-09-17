@@ -19,7 +19,7 @@ void FSeqQueue::Load()
     GConfig->GetArray(SeqCfg::Section, SeqCfg::Key, Paths, Ini);
     GConfig->GetArray(SeqCfg::Section, TEXT("ProcessedQueue"), ProcessedPaths, Ini);
     GConfig->GetArray(SeqCfg::Section, TEXT("CheckpointQueue"), CheckpointEntries, Ini);
-    GConfig->GetInt(SeqCfg::Section, SeqCfg::CurrentIndexKey, CurrentIndex, Ini);
+    CurrentIndex = INDEX_NONE;
 
     for (const FString& ProcessedPath : ProcessedPaths)
     {
@@ -52,8 +52,6 @@ void FSeqQueue::Load()
         Items.Add(MoveTemp(Q));
     }
 
-    CurrentIndex = CheckBoundsIndex(CurrentIndex) ? CurrentIndex : INDEX_NONE;
-    
     CachedProcessedCount = -1; // Invalidate cache on load
 }
 
@@ -87,7 +85,6 @@ void FSeqQueue::Save() const
     GConfig->SetArray(SeqCfg::Section, SeqCfg::Key, Paths, Ini);
     GConfig->SetArray(SeqCfg::Section, TEXT("ProcessedQueue"), ProcessedPaths, Ini);
     GConfig->SetArray(SeqCfg::Section, TEXT("CheckpointQueue"), CheckpointEntries, Ini);
-    GConfig->SetInt(SeqCfg::Section, SeqCfg::CurrentIndexKey, CurrentIndex, Ini);
     GConfig->Flush(false, Ini);
 }
 
@@ -176,7 +173,6 @@ void FSeqQueue::SetCurrentIndex(int32 NewIndex)
 {
     // Check if NewIndex is in range. We set INDEX_NONE if not valid.
     CurrentIndex = CheckBoundsIndex(NewIndex) ? NewIndex : INDEX_NONE;
-    Save();
     QueueChanged.Broadcast();
 }
 
