@@ -490,9 +490,10 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
-                                        .OnClicked(this, &SEditingSessionWindow::OnCheckpointCurrentAnimation)
+                                        //.Text(FText::FromString(TEXT("Next Animation")))
+                                        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
                                         [
-                                            AddIconAndTextHere(TEXT("Sequencer.Tracks.Event"), TEXT("Checkpoint"), false, true)
+                                            AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Todo"), false, true)
                                         ]
                                 ]
                                 + SHorizontalBox::Slot().FillWidth(1.f)
@@ -502,10 +503,9 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
-                                        //.Text(FText::FromString(TEXT("Next Animation")))
-                                        .OnClicked(this, &SEditingSessionWindow::OnLoadNextAnimation)
+                                        .OnClicked(this, &SEditingSessionWindow::OnCheckpointCurrentAnimation)
                                         [
-                                            AddIconAndTextHere(TEXT("Icons.ChevronRight"), TEXT("Next Todo"), false, true)
+                                            AddIconAndTextHere(TEXT("Sequencer.Tracks.Event"), TEXT("Checkpoint"), false, true)
                                         ]
                                 ]
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
