@@ -601,9 +601,20 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
             if (!BindingID.IsValid())
             {
                 BindingID = MovieScene->AddPossessable(MeshActor->GetActorLabel(), MeshActor->GetClass());
-                LevelSequence->BindPossessableObject(BindingID, *MeshActor, World);
                 UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created new possessable for %s"), *MeshActor->GetName());
             }
+        }
+
+        // BindPossessableObject appends a reference, even when the same object is
+        // already bound. Because the editing session reuses one sequence, calling
+        // it repeatedly used to grow this list without bound. Replace the binding
+        // so old sessions are repaired on their next load as well.
+        if (BindingID.IsValid())
+        {
+            LevelSequence->Modify();
+            LevelSequence->UnbindPossessableObjects(BindingID);
+            LevelSequence->BindPossessableObject(BindingID, *MeshActor, World);
+            LevelSequence->MarkPackageDirty();
         }
 
         // Set the anim track and length
