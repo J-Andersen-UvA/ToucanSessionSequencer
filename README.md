@@ -21,7 +21,7 @@ The goal is to avoid rebuilding the same Sequencer setup for every clip and to m
 - Configure a local video folder and automatically match queued animations to video files by name.
 - Bind reference video playback to a MediaPlate so the Sequencer playhead controls it.
 - Align video sections by Unreal source timecode, with `ffprobe` fallback.
-- Generate cached 1080 video proxies for heavy source videos to improve editor playback.
+- Generate cached H.264 review proxies for high-resolution or unsupported source videos to improve editor playback.
 - Bake the edited sequence back to an animation asset.
 - Save lightweight metadata for baked animation output.
 - Track processed queue items.
@@ -33,7 +33,7 @@ The goal is to avoid rebuilding the same Sequencer setup for every clip and to m
 - A configured skeletal mesh/avatar for the editing session.
 - A compatible Control Rig if rig editing is needed.
 - Media plugins required by the module, including MediaAssets, MediaCompositing, and MediaPlate.
-- `ffprobe` on PATH for video timecode fallback and video resolution probing.
-- `ffmpeg` on PATH for automatic 1080 review proxy generation.
+- `ffprobe` on PATH for video timecode fallback and video compatibility probing.
+- `ffmpeg` on PATH for automatic H.264 review proxy generation.
 - Optional: `UnrealMidi` / `MidiMapper` for MIDI controls.
 - `SequencerAbstraction` for shared Sequencer helper functionality.

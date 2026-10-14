@@ -220,7 +220,14 @@ enum class EFfprobeTimecodeResult
     NoTimecode
 };
 
-bool TryGetVideoResolutionWithFfprobe(const FString& VideoFilePath, FIntPoint& OutResolution, bool& bOutMissingExecutable)
+struct FVideoPlaybackInfo
+{
+    FIntPoint Resolution = FIntPoint::ZeroValue;
+    FString CodecName;
+    FString PixelFormat;
+};
+
+bool TryGetVideoPlaybackInfoWithFfprobe(const FString& VideoFilePath, FVideoPlaybackInfo& OutInfo, bool& bOutMissingExecutable)
 {
     bOutMissingExecutable = false;
 
@@ -228,7 +235,7 @@ bool TryGetVideoResolutionWithFfprobe(const FString& VideoFilePath, FIntPoint& O
     FString StdErr;
     int32 ReturnCode = 0;
     const FString Args = FString::Printf(
-        TEXT("-v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x \"%s\""),
+        TEXT("-v error -select_streams v:0 -show_entries stream=codec_name,width,height,pix_fmt -of default=noprint_wrappers=1 \"%s\""),
         *VideoFilePath);
 
     if (!FPlatformProcess::ExecProcess(TEXT("ffprobe"), *Args, &ReturnCode, &StdOut, &StdErr))
@@ -244,20 +251,44 @@ bool TryGetVideoResolutionWithFfprobe(const FString& VideoFilePath, FIntPoint& O
         return false;
     }
 
-    FString Line = StdOut;
-    Line.TrimStartAndEndInline();
-
-    FString WidthText;
-    FString HeightText;
-    if (!Line.Split(TEXT("x"), &WidthText, &HeightText))
+    TArray<FString> Lines;
+    StdOut.ParseIntoArrayLines(Lines, true);
+    for (FString Line : Lines)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: could not parse ffprobe resolution output: %s"), *StdOut);
+        Line.TrimStartAndEndInline();
+
+        FString Key;
+        FString Value;
+        if (!Line.Split(TEXT("="), &Key, &Value))
+        {
+            continue;
+        }
+
+        if (Key == TEXT("codec_name"))
+        {
+            OutInfo.CodecName = Value;
+        }
+        else if (Key == TEXT("width"))
+        {
+            OutInfo.Resolution.X = FCString::Atoi(*Value);
+        }
+        else if (Key == TEXT("height"))
+        {
+            OutInfo.Resolution.Y = FCString::Atoi(*Value);
+        }
+        else if (Key == TEXT("pix_fmt"))
+        {
+            OutInfo.PixelFormat = Value;
+        }
+    }
+
+    if (OutInfo.Resolution.X <= 0 || OutInfo.Resolution.Y <= 0 || OutInfo.CodecName.IsEmpty())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Video proxy skipped: could not parse ffprobe video output: %s"), *StdOut);
         return false;
     }
 
-    OutResolution.X = FCString::Atoi(*WidthText);
-    OutResolution.Y = FCString::Atoi(*HeightText);
-    return OutResolution.X > 0 && OutResolution.Y > 0;
+    return true;
 }
 
 FString GetCachedVideoProxyPath(const FString& VideoFilePath)
@@ -273,14 +304,14 @@ FString GetCachedVideoProxyPath(const FString& VideoFilePath)
         *StatData.ModificationTime.ToString());
     const FString Hash = FMD5::HashAnsiString(*HashInput).Left(10);
     const FString CleanBaseName = FPaths::MakeValidFileName(FPaths::GetBaseFilename(VideoFilePath));
-    return ProxyDir / FString::Printf(TEXT("%s_%s_1080.mp4"), *CleanBaseName, *Hash);
+    return ProxyDir / FString::Printf(TEXT("%s_%s_ue_h264.mp4"), *CleanBaseName, *Hash);
 }
 
 bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& ProxyPath, const FIntPoint& SourceResolution, bool& bOutMissingExecutable)
 {
     bOutMissingExecutable = false;
 
-    FNotificationInfo Info(FText::FromString(TEXT("Creating 1080 video proxy...")));
+    FNotificationInfo Info(FText::FromString(TEXT("Creating compatible video proxy...")));
     Info.bFireAndForget = false;
     Info.FadeOutDuration = 0.5f;
     Info.ExpireDuration = 2.0f;
@@ -290,18 +321,23 @@ bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& Pro
         Notification->SetCompletionState(SNotificationItem::CS_Pending);
     }
 
-    FScopedSlowTask SlowTask(1.0f, FText::FromString(TEXT("Creating 1080 review proxy...")));
+    FScopedSlowTask SlowTask(1.0f, FText::FromString(TEXT("Creating compatible review proxy...")));
     SlowTask.MakeDialog(false);
     SlowTask.EnterProgressFrame(1.0f);
 
     FString StdOut;
     FString StdErr;
     int32 ReturnCode = 0;
-    const FString Scale = SourceResolution.X >= SourceResolution.Y ? TEXT("-2:1080") : TEXT("1080:-2");
+    FString VideoFilter;
+    if (SourceResolution.X > 1920 || SourceResolution.Y > 1080)
+    {
+        const FString Scale = SourceResolution.X >= SourceResolution.Y ? TEXT("-2:1080") : TEXT("1080:-2");
+        VideoFilter = FString::Printf(TEXT("-vf scale=%s "), *Scale);
+    }
     const FString Args = FString::Printf(
-        TEXT("-y -hide_banner -loglevel error -i \"%s\" -vf scale=%s -c:v libx264 -preset ultrafast -crf 20 -g 1 -pix_fmt yuv420p -an \"%s\""),
+        TEXT("-y -hide_banner -loglevel error -i \"%s\" %s-c:v libx264 -preset ultrafast -crf 20 -g 1 -pix_fmt yuv420p -movflags +faststart -an \"%s\""),
         *SourcePath,
-        *Scale,
+        *VideoFilter,
         *ProxyPath);
 
     if (!FPlatformProcess::ExecProcess(TEXT("ffmpeg"), *Args, &ReturnCode, &StdOut, &StdErr))
@@ -330,10 +366,10 @@ bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& Pro
         return false;
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created 1080 review proxy: %s"), *ProxyPath);
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Created compatible review proxy: %s"), *ProxyPath);
     if (Notification.IsValid())
     {
-        Notification->SetText(FText::FromString(TEXT("1080 video proxy ready.")));
+        Notification->SetText(FText::FromString(TEXT("Compatible video proxy ready.")));
         Notification->SetCompletionState(SNotificationItem::CS_Success);
         Notification->ExpireAndFadeout();
     }
@@ -342,29 +378,40 @@ bool TryCreateVideoProxyWithFfmpeg(const FString& SourcePath, const FString& Pro
 
 FString ResolveVideoPathForEditorPlayback(const FString& OriginalVideoFilePath)
 {
-    FIntPoint SourceResolution;
+    FVideoPlaybackInfo VideoInfo;
     bool bMissingFfprobe = false;
-    if (!TryGetVideoResolutionWithFfprobe(OriginalVideoFilePath, SourceResolution, bMissingFfprobe))
+    if (!TryGetVideoPlaybackInfoWithFfprobe(OriginalVideoFilePath, VideoInfo, bMissingFfprobe))
     {
         return OriginalVideoFilePath;
     }
 
-    if (SourceResolution.X <= 1920 && SourceResolution.Y <= 1080)
+    const bool bEditorCompatibleCodec = VideoInfo.CodecName.Equals(TEXT("h264"), ESearchCase::IgnoreCase);
+    const bool bEditorCompatiblePixelFormat = VideoInfo.PixelFormat.Equals(TEXT("yuv420p"), ESearchCase::IgnoreCase);
+    const bool bEditorCompatibleResolution = VideoInfo.Resolution.X <= 1920 && VideoInfo.Resolution.Y <= 1080;
+    if (bEditorCompatibleCodec && bEditorCompatiblePixelFormat && bEditorCompatibleResolution)
     {
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video is already editor-friendly resolution: %dx%d"), SourceResolution.X, SourceResolution.Y);
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video is already editor-compatible: %s, %s, %dx%d"),
+            *VideoInfo.CodecName,
+            *VideoInfo.PixelFormat,
+            VideoInfo.Resolution.X,
+            VideoInfo.Resolution.Y);
         return OriginalVideoFilePath;
     }
 
     const FString ProxyPath = GetCachedVideoProxyPath(OriginalVideoFilePath);
     if (FPaths::FileExists(ProxyPath))
     {
-        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Using cached 1080 review proxy: %s"), *ProxyPath);
+        UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Using cached compatible review proxy: %s"), *ProxyPath);
         return ProxyPath;
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video is %dx%d; creating 1080 review proxy."), SourceResolution.X, SourceResolution.Y);
+    UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Video requires a compatible proxy: %s, %s, %dx%d"),
+        *VideoInfo.CodecName,
+        *VideoInfo.PixelFormat,
+        VideoInfo.Resolution.X,
+        VideoInfo.Resolution.Y);
     bool bMissingFfmpeg = false;
-    if (TryCreateVideoProxyWithFfmpeg(OriginalVideoFilePath, ProxyPath, SourceResolution, bMissingFfmpeg))
+    if (TryCreateVideoProxyWithFfmpeg(OriginalVideoFilePath, ProxyPath, VideoInfo.Resolution, bMissingFfmpeg))
     {
         return ProxyPath;
     }
