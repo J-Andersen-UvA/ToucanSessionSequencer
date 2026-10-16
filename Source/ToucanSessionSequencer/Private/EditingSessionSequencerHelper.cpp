@@ -683,6 +683,8 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         }
     }
 
+    NotifyActiveSequencer(LevelSequence, EMovieSceneDataChangeType::MovieSceneStructureItemsChanged);
+
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation '%s' into Level Sequence."), *Animation->GetName());
     RequestPostAnimationLoadGarbageCollection();
 }
