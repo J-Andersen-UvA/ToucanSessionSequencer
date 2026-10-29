@@ -49,5 +49,24 @@ public class ToucanSessionSequencer : ModuleRules
 
         PublicDefinitions.Add("WITH_MIDIMAPPER=0");
 
+        string handposeTimelineModule = Path.GetFullPath(Path.Combine(
+            ModuleDirectory,
+            "..",
+            "..",
+            "..",
+            "HandposeTimeline",
+            "Source",
+            "HandposeTimeline"));
+        if (Directory.Exists(handposeTimelineModule))
+        {
+            PrivateIncludePathModuleNames.Add("HandposeTimeline");
+            DynamicallyLoadedModuleNames.Add("HandposeTimeline");
+            PublicDefinitions.Add("WITH_HANDPOSE_TIMELINE=1");
+        }
+        else
+        {
+            PublicDefinitions.Add("WITH_HANDPOSE_TIMELINE=0");
+        }
+
     }
 }

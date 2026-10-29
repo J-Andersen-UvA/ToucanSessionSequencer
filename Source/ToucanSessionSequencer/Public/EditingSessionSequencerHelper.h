@@ -24,6 +24,7 @@ public:
     static void LoadNextAnimation(TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
                                   TSoftObjectPtr<UObject> Rig,
                                   UAnimSequence* Animation);
+    static void closeActiveSequenceEditor();
     static FGuid FindBindingForObject(
         const ULevelSequence* LevelSequence,
         UObject* InObject,
@@ -40,6 +41,7 @@ public:
     static FString SaveCheckpointForCurrentSequence(const FString& SourceAnimPath, const FString& DestinationFolder);
     static bool OpenCheckpointSequence(const FString& CheckpointPath);
     static void LoadVideoForCurrentSequence(const FString& VideoFilePath);
+    static bool createBakedAnimMetadata(UAnimSequence* bakedAnim);
     static UControlRig* GetActiveRig();
     static void RemoveRigFromSequence(ULevelSequence* LevelSequence);
 
@@ -67,5 +69,11 @@ private:
         UAnimSequence* bakedAnim,
         const FString& folder
     );
+    static bool saveBakedAnimMetadata(
+        UAnimSequence* bakedAnim,
+        const FString& folder,
+        int32 fps,
+        int32 startTrimFrame,
+        int32 endTrimFrame);
 
 };

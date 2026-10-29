@@ -41,6 +41,11 @@
         {
             "Name": "MediaPlate",
             "Enabled": true
+        },
+        {
+            "Name": "HandposeTimeline",
+            "Enabled": true,
+            "Optional": true
         }
     ]
 }

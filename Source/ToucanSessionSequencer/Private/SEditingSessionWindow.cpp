@@ -31,6 +31,12 @@
 #include "Animation/AnimSequence.h"
 #include "EditingSessionDelegates.h"
 #include "ToucanSessionSequencerStyle.h"
+#include "Interfaces/IPluginManager.h"
+#include "Modules/ModuleManager.h"
+
+#if WITH_HANDPOSE_TIMELINE
+#include "HandposeTimelineModule.h"
+#endif
 
 namespace
 {
@@ -483,6 +489,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
+                                        .IsEnabled_Lambda([this]() { return !currentItemInHandposeTimeline; })
                                         //.Text(FText::FromString(TEXT("Bake & Save")))
                                         .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimation)
                                         [
@@ -505,6 +512,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
+                                        .IsEnabled_Lambda([this]() { return !currentItemInHandposeTimeline; })
                                         .OnClicked(this, &SEditingSessionWindow::OnCheckpointCurrentAnimation)
                                         [
                                             AddIconAndTextHere(TEXT("Sequencer.Tracks.Event"), TEXT("Checkpoint"), false, true)
@@ -513,6 +521,7 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
                                 [
                                     SNew(SButton)
+                                        .IsEnabled_Lambda([this]() { return !currentItemInHandposeTimeline; })
                                         .OnClicked(this, &SEditingSessionWindow::OnBakeSaveAnimationTo)
                                         [
                                             AddIconAndTextHere(TEXT("Icons.Save"), TEXT("Bake & Save To"), false, true)
@@ -525,6 +534,25 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                 + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
                                 [
                                     SNew(SButton)
+                                        .Text(FText::FromString(TEXT("HandposeTimeline mode")))
+                                        .Visibility_Lambda([this]()
+                                        {
+                                            return isHandposeTimelineAvailable()
+                                                ? EVisibility::Visible
+                                                : EVisibility::Collapsed;
+                                        })
+                                        .ButtonColorAndOpacity_Lambda([this]()
+                                        {
+                                            return handposeTimelineMode
+                                                ? FLinearColor(0.05f, 0.4f, 0.75f, 1.0f)
+                                                : FLinearColor::White;
+                                        })
+                                        .OnClicked(this, &SEditingSessionWindow::onToggleHandposeTimelineMode)
+                                ]
+                                + SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0, 0, 4, 0)
+                                [
+                                    SNew(SButton)
+                                        .IsEnabled_Lambda([this]() { return !currentItemInHandposeTimeline; })
                                         .OnClicked(this, &SEditingSessionWindow::OnLoadVideoForCurrent)
                                         [
                                             AddIconAndTextHere(TEXT("Icons.FolderOpen"), TEXT("Load video for current"), false, true)
@@ -539,7 +567,55 @@ TSharedRef<SWidget> SEditingSessionWindow::BuildSessionControlsRow()
                                         ]
                                 ]
                         ]
+                        + SVerticalBox::Slot().AutoHeight().Padding(0, 8, 0, 0)
+                        [
+                            buildHandposeTimelineActions()
+                        ]
                 ]
+        ];
+}
+
+TSharedRef<SWidget> SEditingSessionWindow::buildHandposeTimelineActions()
+{
+    return SNew(SBorder)
+        .Visibility_Lambda([this]()
+        {
+            return currentItemInHandposeTimeline && isHandposeTimelineAvailable()
+                ? EVisibility::Visible
+                : EVisibility::Collapsed;
+        })
+        .Padding(FMargin(8, 6))
+        .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+        [
+            SNew(SVerticalBox)
+            + SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 6)
+            [
+                SNew(STextBlock)
+                    .Text(FText::FromString(TEXT("HandposeTimeline Actions")))
+                    .Font(FCoreStyle::GetDefaultFontStyle("Bold", 10))
+            ]
+            + SVerticalBox::Slot().AutoHeight()
+            [
+                SNew(SHorizontalBox)
+                + SHorizontalBox::Slot().AutoWidth().Padding(0, 0, 4, 0)
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Bake & Finish")))
+                        .ToolTipText(FText::FromString(TEXT(
+                            "Bake the HandposeTimeline result, create its metadata asset, and mark the current todo processed.")))
+                        .IsEnabled(this, &SEditingSessionWindow::canBakeHandposeTimeline)
+                        .OnClicked(this, &SEditingSessionWindow::onBakeAndFinishHandpose)
+                ]
+                + SHorizontalBox::Slot().AutoWidth()
+                [
+                    SNew(SButton)
+                        .Text(FText::FromString(TEXT("Continue in Sequencer")))
+                        .ToolTipText(FText::FromString(TEXT(
+                            "Use the HandposeTimeline result as the Sequencer input, or confirm continuing with the unchanged base animation when no handshapes are assigned.")))
+                        .IsEnabled(this, &SEditingSessionWindow::canContinueHandposeInSequencer)
+                        .OnClicked(this, &SEditingSessionWindow::onContinueHandposeInSequencer)
+                ]
+            ]
         ];
 }
 
@@ -630,10 +706,16 @@ void SEditingSessionWindow::LoadSettings()
     GConfig->GetString(CfgSection, BakeSaveToFolderKey, BakeSaveToFolderPath, Ini);
 
     if (!MeshPath.IsEmpty())
+    {
         SelectedMesh = TSoftObjectPtr<USkeletalMesh>(FSoftObjectPath(MeshPath));
+        SelectedMesh.LoadSynchronous();
+    }
 
     if (!RigPath.IsEmpty())
+    {
         SelectedRig = TSoftObjectPtr<UObject>(FSoftObjectPath(RigPath));
+        SelectedRig.LoadSynchronous();
+    }
 
     if (!VideoFolderPath.IsEmpty())
         SelectedVideoFolder = VideoFolderPath;
@@ -759,8 +841,10 @@ TSharedRef<ITableRow> SEditingSessionWindow::OnMakeRow(
                 [
                     SNew(SButton)
                         .Text(FText::FromString(TEXT("Continue from checkpoint")))
-                        .Visibility_Lambda([Item]() {
+                        .Visibility_Lambda([this, Item]() {
                         if (!Item.IsValid())
+                            return EVisibility::Collapsed;
+                        if (handposeTimelineMode)
                             return EVisibility::Collapsed;
                         return IsQueuedAnimCheckpointed(*Item)
                             ? EVisibility::Visible
@@ -1214,7 +1298,8 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
 
     bool bCheckpointPromptAlreadyShown = false;
     FString CheckpointPath;
-    if (TryGetCheckpointPath(All[NextUnprocessedIndex], CheckpointPath))
+    if (!handposeTimelineMode &&
+        TryGetCheckpointPath(All[NextUnprocessedIndex], CheckpointPath))
     {
         bCheckpointPromptAlreadyShown = true;
         const EAppReturnType::Type Response = FMessageDialog::Open(
@@ -1253,7 +1338,8 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
     }
 
     SyncQueueStatusFromLoadedAsset(All[NextUnprocessedIndex], AnimObject);
-    if (!bCheckpointPromptAlreadyShown &&
+    if (!handposeTimelineMode &&
+        !bCheckpointPromptAlreadyShown &&
         TryGetCheckpointPath(FSeqQueue::Get().GetAll()[NextUnprocessedIndex], CheckpointPath))
     {
         const EAppReturnType::Type Response = FMessageDialog::Open(
@@ -1298,12 +1384,15 @@ FReply SEditingSessionWindow::OnLoadNextAnimation()
         return FReply::Handled();
     }
 
-    UObject* RigObj = SelectedRig.LoadSynchronous(); // or TryLoad()
-
-    // Delegate to helper
-    FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+    if (!loadAnimationForCurrentMode(Anim))
+    {
+        return FReply::Handled();
+    }
     FSeqQueue::Get().SetCurrentIndex(NextUnprocessedIndex);
-    LoadBestMatchedVideoForCurrent();
+    if (!currentItemInHandposeTimeline)
+    {
+        LoadBestMatchedVideoForCurrent();
+    }
 
     return FReply::Handled();
 }
@@ -1452,6 +1541,7 @@ void SEditingSessionWindow::ContinueFromCheckpointAtIndex(int32 TargetIndex)
     }
 
     FSeqQueue::Get().SetCurrentIndex(TargetIndex);
+    currentItemInHandposeTimeline = false;
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Continued queue item %d from checkpoint: %s"), TargetIndex, *CheckpointPath);
 }
 
@@ -1482,7 +1572,8 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
     SyncQueueStatusFromLoadedAsset(All[TargetIndex], AnimObject);
 
     FString CheckpointPath;
-    if (TryGetCheckpointPath(FSeqQueue::Get().GetAll()[TargetIndex], CheckpointPath))
+    if (!handposeTimelineMode &&
+        TryGetCheckpointPath(FSeqQueue::Get().GetAll()[TargetIndex], CheckpointPath))
     {
         const EAppReturnType::Type Response = FMessageDialog::Open(
             EAppMsgType::YesNo,
@@ -1527,13 +1618,264 @@ void SEditingSessionWindow::LoadAnimationAtIndex(int32 TargetIndex)
         return;
     }
 
-    UObject* RigObj = SelectedRig.LoadSynchronous();
-
-    FEditingSessionSequencerHelper::LoadNextAnimation(SelectedMesh, RigObj, Anim);
+    if (!loadAnimationForCurrentMode(Anim))
+    {
+        return;
+    }
     FSeqQueue::Get().SetCurrentIndex(TargetIndex);
-    LoadBestMatchedVideoForCurrent();
+    if (!currentItemInHandposeTimeline)
+    {
+        LoadBestMatchedVideoForCurrent();
+    }
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation at index %d: %s"), TargetIndex, *Anim->GetName());
+}
+
+FReply SEditingSessionWindow::onToggleHandposeTimelineMode()
+{
+    if (isHandposeTimelineAvailable())
+    {
+        handposeTimelineMode = !handposeTimelineMode;
+    }
+    else
+    {
+        handposeTimelineMode = false;
+    }
+    return FReply::Handled();
+}
+
+FReply SEditingSessionWindow::onBakeAndFinishHandpose()
+{
+#if WITH_HANDPOSE_TIMELINE
+    const int32 currentIndex = FSeqQueue::Get().GetCurrentIndex();
+    const auto& queue = FSeqQueue::Get().GetAll();
+    IHandposeTimelineModule* module =
+        FModuleManager::GetModulePtr<IHandposeTimelineModule>(
+            TEXT("HandposeTimeline"));
+    if (!queue.IsValidIndex(currentIndex) || module == nullptr)
+    {
+        return FReply::Handled();
+    }
+
+    UAnimSequence* bakedAnimation = nullptr;
+    FString outputPath;
+    FString errorMessage;
+    bool cancelled = false;
+    if (!module->bakeCurrentAnimation(
+            bakedAnimation,
+            outputPath,
+            errorMessage,
+            cancelled))
+    {
+        if (!cancelled)
+        {
+            FMessageDialog::Open(
+                EAppMsgType::Ok,
+                FText::FromString(errorMessage));
+        }
+        return FReply::Handled();
+    }
+
+    if (!FEditingSessionSequencerHelper::createBakedAnimMetadata(bakedAnimation))
+    {
+        FMessageDialog::Open(
+            EAppMsgType::Ok,
+            FText::FromString(TEXT(
+                "The animation was baked, but its metadata asset could not be saved. The todo was not marked processed.")));
+        return FReply::Handled();
+    }
+
+    const FSoftObjectPath sourcePath = queue[currentIndex].Path;
+    FOutputHelper::MarkAssetAsProcessed(sourcePath.ToString());
+    FSeqQueue::Get().SetProcessed(sourcePath, true);
+    RefreshQueue();
+    FMessageDialog::Open(
+        EAppMsgType::Ok,
+        FText::FromString(FString::Printf(
+            TEXT("Finished HandposeTimeline processing:\n\n%s"),
+            *outputPath)));
+#endif
+    return FReply::Handled();
+}
+
+FReply SEditingSessionWindow::onContinueHandposeInSequencer()
+{
+#if WITH_HANDPOSE_TIMELINE
+    IHandposeTimelineModule* module =
+        FModuleManager::GetModulePtr<IHandposeTimelineModule>(
+            TEXT("HandposeTimeline"));
+    if (module == nullptr || !canContinueHandposeInSequencer())
+    {
+        return FReply::Handled();
+    }
+
+    UAnimSequence* animationForSequencer = nullptr;
+    FString outputPath;
+    if (module->hasAssignments())
+    {
+        FString errorMessage;
+        bool cancelled = false;
+        if (!module->bakeCurrentAnimation(
+                animationForSequencer,
+                outputPath,
+                errorMessage,
+                cancelled))
+        {
+            if (!cancelled)
+            {
+                FMessageDialog::Open(
+                    EAppMsgType::Ok,
+                    FText::FromString(errorMessage));
+            }
+            return FReply::Handled();
+        }
+    }
+    else
+    {
+        const EAppReturnType::Type response = FMessageDialog::Open(
+            EAppMsgType::YesNo,
+            FText::FromString(TEXT(
+                "No handshapes are assigned. Continue in Sequencer with the unchanged base animation?\n\n"
+                "Yes: Continue in Sequencer\n"
+                "No: Keep editing in HandposeTimeline")),
+            FText::FromString(TEXT("No Handshapes Assigned")));
+        if (response != EAppReturnType::Yes)
+        {
+            return FReply::Handled();
+        }
+        animationForSequencer = Cast<UAnimSequence>(
+            module->getLoadedAnimation());
+        if (animationForSequencer == nullptr)
+        {
+            FMessageDialog::Open(
+                EAppMsgType::Ok,
+                FText::FromString(TEXT(
+                    "The loaded HandposeTimeline asset is not an animation sequence.")));
+            return FReply::Handled();
+        }
+    }
+
+    UObject* rigObject = SelectedRig.LoadSynchronous();
+    FEditingSessionSequencerHelper::LoadNextAnimation(
+        SelectedMesh,
+        rigObject,
+        animationForSequencer);
+    currentItemInHandposeTimeline = false;
+    LoadBestMatchedVideoForCurrent();
+    if (outputPath.IsEmpty())
+    {
+        UE_LOG(
+            LogTemp,
+            Display,
+            TEXT("[ToucanSequencer] Continued unchanged base animation in Sequencer: %s"),
+            *animationForSequencer->GetName());
+    }
+    else
+    {
+        UE_LOG(
+            LogTemp,
+            Display,
+            TEXT("[ToucanSequencer] Continued HandposeTimeline bake in Sequencer: %s"),
+            *outputPath);
+    }
+#endif
+    return FReply::Handled();
+}
+
+bool SEditingSessionWindow::canBakeHandposeTimeline() const
+{
+#if WITH_HANDPOSE_TIMELINE
+    const int32 currentIndex = FSeqQueue::Get().GetCurrentIndex();
+    const IHandposeTimelineModule* module =
+        FModuleManager::GetModulePtr<IHandposeTimelineModule>(
+            TEXT("HandposeTimeline"));
+    return currentItemInHandposeTimeline &&
+        FSeqQueue::Get().GetAll().IsValidIndex(currentIndex) &&
+        module != nullptr &&
+        module->canBakeCurrentAnimation();
+#else
+    return false;
+#endif
+}
+
+bool SEditingSessionWindow::canContinueHandposeInSequencer() const
+{
+#if WITH_HANDPOSE_TIMELINE
+    const int32 currentIndex = FSeqQueue::Get().GetCurrentIndex();
+    if (!currentItemInHandposeTimeline ||
+        !FSeqQueue::Get().GetAll().IsValidIndex(currentIndex) ||
+        !SelectedMesh.IsValid() ||
+        !SelectedRig.IsValid())
+    {
+        return false;
+    }
+
+    const IHandposeTimelineModule* module =
+        FModuleManager::GetModulePtr<IHandposeTimelineModule>(
+            TEXT("HandposeTimeline"));
+    const UAnimSequenceBase* animation = module != nullptr
+        ? module->getLoadedAnimation()
+        : nullptr;
+    if (module == nullptr ||
+        (module->hasAssignments() && !module->canBakeCurrentAnimation()))
+    {
+        return false;
+    }
+    const USkeletalMesh* skeletalMesh = SelectedMesh.Get();
+    return animation != nullptr &&
+        skeletalMesh != nullptr &&
+        animation->GetSkeleton() != nullptr &&
+        skeletalMesh->GetSkeleton() != nullptr &&
+        animation->GetSkeleton()->IsCompatibleForEditor(
+            skeletalMesh->GetSkeleton());
+#else
+    return false;
+#endif
+}
+
+bool SEditingSessionWindow::isHandposeTimelineAvailable() const
+{
+#if WITH_HANDPOSE_TIMELINE
+    const TSharedPtr<IPlugin> plugin =
+        IPluginManager::Get().FindPlugin(TEXT("HandposeTimeline"));
+    return plugin.IsValid() &&
+        plugin->IsEnabled() &&
+        FModuleManager::Get().ModuleExists(TEXT("HandposeTimeline"));
+#else
+    return false;
+#endif
+}
+
+bool SEditingSessionWindow::loadAnimationForCurrentMode(UAnimSequence* animation)
+{
+    currentItemInHandposeTimeline = false;
+    if (!handposeTimelineMode)
+    {
+        UObject* rigObject = SelectedRig.LoadSynchronous();
+        FEditingSessionSequencerHelper::LoadNextAnimation(
+            SelectedMesh,
+            rigObject,
+            animation);
+        return true;
+    }
+
+#if WITH_HANDPOSE_TIMELINE
+    IHandposeTimelineModule* module =
+        FModuleManager::LoadModulePtr<IHandposeTimelineModule>(
+            TEXT("HandposeTimeline"));
+    if (module != nullptr && module->openAnimation(animation))
+    {
+        FEditingSessionSequencerHelper::closeActiveSequenceEditor();
+        currentItemInHandposeTimeline = true;
+        return true;
+    }
+#endif
+
+    FMessageDialog::Open(
+        EAppMsgType::Ok,
+        FText::FromString(TEXT(
+            "HandposeTimeline is unavailable. Disable HandposeTimeline mode or enable the plugin.")));
+    return false;
 }
 
 FString SEditingSessionWindow::GetCurrentConfiguredOutputFolder() const

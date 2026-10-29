@@ -30,6 +30,7 @@
 #include "FileMediaSource.h"
 #include "OutputHelper.h"
 #include "Misc/MessageDialog.h"
+#include "Misc/PackageName.h"
 #include "Misc/ScopedSlowTask.h"
 #include "Misc/SecureHash.h"
 #include "Containers/Ticker.h"
@@ -45,6 +46,7 @@
 #include "MovieSceneSequenceID.h"
 #include "Animation/AnimationSettings.h"
 #include "ToucanBakedAnimMetadata.h"
+#include "Subsystems/AssetEditorSubsystem.h"
 
 #include "SequencerAbstractionBPLibrary.h"
 
@@ -687,6 +689,23 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
 
     UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Loaded animation '%s' into Level Sequence."), *Animation->GetName());
     RequestPostAnimationLoadGarbageCollection();
+}
+
+void FEditingSessionSequencerHelper::closeActiveSequenceEditor()
+{
+    ULevelSequence* sequence = ActiveSequence.Get();
+    if (sequence != nullptr && GEditor != nullptr)
+    {
+        if (UAssetEditorSubsystem* editorSubsystem =
+                GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+        {
+            editorSubsystem->CloseAllEditorsForAsset(sequence);
+        }
+    }
+
+    ActiveSequence.Reset();
+    ActiveSkeletalMeshComponent.Reset();
+    ActiveRig.Reset();
 }
 
 ULevelSequence* FEditingSessionSequencerHelper::CreateOrLoadLevelSequence()
@@ -1534,6 +1553,57 @@ void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
         ? FMath::RoundToInt(displayRate.AsDecimal())
         : displayRate.Numerator;
 
+    saveBakedAnimMetadata(
+        bakedAnim,
+        folder,
+        fps,
+        startTrimFrame,
+        endTrimFrame);
+#endif
+}
+
+bool FEditingSessionSequencerHelper::createBakedAnimMetadata(
+    UAnimSequence* bakedAnim)
+{
+#if WITH_EDITOR
+    if (bakedAnim == nullptr)
+    {
+        return false;
+    }
+
+    const FFrameRate samplingRate = bakedAnim->GetSamplingFrameRate();
+    const int32 fps = samplingRate.AsDecimal() > 0.0
+        ? FMath::RoundToInt(samplingRate.AsDecimal())
+        : samplingRate.Numerator;
+    const int32 endTrimFrame = FMath::Max(
+        0,
+        bakedAnim->GetNumberOfSampledKeys() - 1);
+    const FString folder = FPackageName::GetLongPackagePath(
+        bakedAnim->GetOutermost()->GetName());
+    return saveBakedAnimMetadata(
+        bakedAnim,
+        folder,
+        fps,
+        0,
+        endTrimFrame);
+#else
+    return false;
+#endif
+}
+
+bool FEditingSessionSequencerHelper::saveBakedAnimMetadata(
+    UAnimSequence* bakedAnim,
+    const FString& folder,
+    const int32 fps,
+    const int32 startTrimFrame,
+    const int32 endTrimFrame)
+{
+#if WITH_EDITOR
+    if (bakedAnim == nullptr || folder.IsEmpty())
+    {
+        return false;
+    }
+
     const FString metadataAssetName = bakedAnim->GetName() + TEXT("_Metadata");
     const FString metadataObjectPath = folder / metadataAssetName;
 
@@ -1555,7 +1625,7 @@ void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
     if (!metadataAsset)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to create metadata asset for %s"), *bakedAnim->GetName());
-        return;
+        return false;
     }
 
     metadataAsset->Modify();
@@ -1584,6 +1654,8 @@ void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
             endTrimFrame
         );
     }
-
+    return bSavedAnimMetadata;
+#else
+    return false;
 #endif
 }

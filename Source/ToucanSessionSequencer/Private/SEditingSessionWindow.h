@@ -23,6 +23,7 @@ private:
     TSharedRef<SWidget> BuildQueueAdditionControlsRow();
     TSharedRef<SWidget> BuildQueueRemovalControlsRow();
     TSharedRef<SWidget> BuildSessionControlsRow();
+    TSharedRef<SWidget> buildHandposeTimelineActions();
     TSharedRef<SWidget> BuildQueueList();
     TSharedRef<SWidget> AddIconHere(const FString& IconName, const FVector2D& Size = FVector2D(16.f, 16.f));
     TSharedRef<SWidget> AddIconAndTextHere(const FString& IconName, const FString& Text, bool bBold, bool bUseAppStyleIcon, const FLinearColor& IconColor);
@@ -44,6 +45,9 @@ private:
     FReply OnCheckpointCurrentAnimation();
     FReply OnLoadNextAnimation();
     FReply OnLoadVideoForCurrent();
+    FReply onToggleHandposeTimelineMode();
+    FReply onBakeAndFinishHandpose();
+    FReply onContinueHandposeInSequencer();
     bool LoadBestMatchedVideoForCurrent();
     FString FindBestMatchedVideoForCurrent() const;
 
@@ -53,6 +57,10 @@ private:
 
     void LoadAnimationAtIndex(int32 TargetIndex);
     void ContinueFromCheckpointAtIndex(int32 TargetIndex);
+    bool isHandposeTimelineAvailable() const;
+    bool canBakeHandposeTimeline() const;
+    bool canContinueHandposeInSequencer() const;
+    bool loadAnimationForCurrentMode(UAnimSequence* animation);
 
 private:
     TArray<TSharedPtr<FQueuedAnim>> Rows;
@@ -62,6 +70,8 @@ private:
     TSoftObjectPtr<UObject> SelectedRig;
     FString SelectedVideoFolder;
     FString BakeSaveToFolder;
+    bool handposeTimelineMode = false;
+    bool currentItemInHandposeTimeline = false;
 
     // Config keys
     static constexpr const TCHAR* CfgSection = TEXT("ToucanEditingSession");
