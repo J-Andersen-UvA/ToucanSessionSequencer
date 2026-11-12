@@ -23,7 +23,9 @@ class TOUCANSESSIONSEQUENCER_API FEditingSessionSequencerHelper
 public:
     static void LoadNextAnimation(TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
                                   TSoftObjectPtr<UObject> Rig,
-                                  UAnimSequence* Animation);
+                                  UAnimSequence* Animation,
+                                  int32 sourceStartFrame = 0,
+                                  int32 sourceEndFrame = INDEX_NONE);
     static void closeActiveSequenceEditor();
     static FGuid FindBindingForObject(
         const ULevelSequence* LevelSequence,
@@ -41,7 +43,10 @@ public:
     static FString SaveCheckpointForCurrentSequence(const FString& SourceAnimPath, const FString& DestinationFolder);
     static bool OpenCheckpointSequence(const FString& CheckpointPath);
     static void LoadVideoForCurrentSequence(const FString& VideoFilePath);
-    static bool createBakedAnimMetadata(UAnimSequence* bakedAnim);
+    static bool createBakedAnimMetadata(
+        UAnimSequence* bakedAnim,
+        int32 startTrimFrame = 0,
+        int32 endTrimFrame = INDEX_NONE);
     static UControlRig* GetActiveRig();
     static void RemoveRigFromSequence(ULevelSequence* LevelSequence);
 
@@ -58,7 +63,13 @@ private:
 private:
     // --- Internal helpers ---
     static ASkeletalMeshActor* SpawnOrFindSkeletalMeshActor(UWorld* World, TSoftObjectPtr<USkeletalMesh> SkeletalMesh);
-    static UMovieSceneSection* AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange = true);
+    static UMovieSceneSection* AddAnimationTrack(
+        ULevelSequence* LevelSequence,
+        UAnimSequence* Animation,
+        FGuid BindingID,
+        bool bSetAnimRange = true,
+        int32 sourceStartFrame = 0,
+        int32 sourceEndFrame = INDEX_NONE);
     static void AddRigToSequence(ULevelSequence* LevelSequence, TSoftObjectPtr<UObject> Rig);
     static ULevelSequence* CreateLevelSequenceAsset(const FString& FolderPath, const FString& AssetName);
 

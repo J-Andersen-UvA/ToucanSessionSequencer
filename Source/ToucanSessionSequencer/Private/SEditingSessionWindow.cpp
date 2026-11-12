@@ -1661,6 +1661,9 @@ FReply SEditingSessionWindow::onBakeAndFinishHandpose()
     FString outputPath;
     FString errorMessage;
     bool cancelled = false;
+    int32 trimStartFrame = 0;
+    int32 trimEndFrame = 0;
+    module->getPlaybackRange(trimStartFrame, trimEndFrame);
     if (!module->bakeCurrentAnimation(
             bakedAnimation,
             outputPath,
@@ -1676,7 +1679,10 @@ FReply SEditingSessionWindow::onBakeAndFinishHandpose()
         return FReply::Handled();
     }
 
-    if (!FEditingSessionSequencerHelper::createBakedAnimMetadata(bakedAnimation))
+    if (!FEditingSessionSequencerHelper::createBakedAnimMetadata(
+            bakedAnimation,
+            trimStartFrame,
+            trimEndFrame))
     {
         FMessageDialog::Open(
             EAppMsgType::Ok,
@@ -1711,7 +1717,10 @@ FReply SEditingSessionWindow::onContinueHandposeInSequencer()
 
     UAnimSequence* animationForSequencer = nullptr;
     FString outputPath;
-    if (module->hasAssignments())
+    int32 trimStartFrame = 0;
+    int32 trimEndFrame = 0;
+    module->getPlaybackRange(trimStartFrame, trimEndFrame);
+    if (module->hasAssignments() || module->hasCustomPlaybackRange())
     {
         FString errorMessage;
         bool cancelled = false;
@@ -1755,11 +1764,14 @@ FReply SEditingSessionWindow::onContinueHandposeInSequencer()
         }
     }
 
+    module->resetSession();
     UObject* rigObject = SelectedRig.LoadSynchronous();
     FEditingSessionSequencerHelper::LoadNextAnimation(
         SelectedMesh,
         rigObject,
-        animationForSequencer);
+        animationForSequencer,
+        trimStartFrame,
+        trimEndFrame);
     currentItemInHandposeTimeline = false;
     LoadBestMatchedVideoForCurrent();
     if (outputPath.IsEmpty())
@@ -1817,7 +1829,8 @@ bool SEditingSessionWindow::canContinueHandposeInSequencer() const
         ? module->getLoadedAnimation()
         : nullptr;
     if (module == nullptr ||
-        (module->hasAssignments() && !module->canBakeCurrentAnimation()))
+        ((module->hasAssignments() || module->hasCustomPlaybackRange()) &&
+            !module->canBakeCurrentAnimation()))
     {
         return false;
     }

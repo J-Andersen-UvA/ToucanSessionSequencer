@@ -575,7 +575,9 @@ void WaitForMediaSectionTimecodeAndSnap(ULevelSequence* LevelSequence, UMovieSce
 void FEditingSessionSequencerHelper::LoadNextAnimation(
     TSoftObjectPtr<USkeletalMesh> SkeletalMesh,
     TSoftObjectPtr<UObject> Rig,
-    UAnimSequence* Animation)
+    UAnimSequence* Animation,
+    const int32 sourceStartFrame,
+    const int32 sourceEndFrame)
 {
     if (!Animation)
     {
@@ -667,7 +669,13 @@ void FEditingSessionSequencerHelper::LoadNextAnimation(
         }
 
         // Set the anim track and length
-        AddAnimationTrack(LevelSequence, Animation, BindingID);
+        AddAnimationTrack(
+            LevelSequence,
+            Animation,
+            BindingID,
+            true,
+            sourceStartFrame,
+            sourceEndFrame);
     }
 
     // Add rig if selected
@@ -864,7 +872,13 @@ int32 GetSourceFrameCount(const UAnimSequence* Animation)
     return 0;
 }
 
-UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequence* LevelSequence, UAnimSequence* Animation, FGuid BindingID, bool bSetAnimRange)
+UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(
+    ULevelSequence* LevelSequence,
+    UAnimSequence* Animation,
+    FGuid BindingID,
+    bool bSetAnimRange,
+    const int32 sourceStartFrame,
+    const int32 sourceEndFrame)
 {
     if (!LevelSequence || !Animation)
         return nullptr;
@@ -900,7 +914,8 @@ UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequ
     );
     if (!AnimTrack) return nullptr;
 
-    UMovieSceneSection* Section = AnimTrack->AddNewAnimation(FFrameNumber(0), Animation);
+    const FFrameNumber requestedStartFrame(FMath::Max(0, sourceStartFrame));
+    UMovieSceneSection* Section = AnimTrack->AddNewAnimation(requestedStartFrame, Animation);
     if (!Section)
     {
         UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] AddNewAnimation returned null. Possibly invalid binding or uninitialized sequence."));
@@ -912,17 +927,21 @@ UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequ
         MovieScene->SetPlaybackRangeLocked(false);
 
         const FFrameRate TickRes = MovieScene->GetTickResolution();
-        const FFrameNumber StartTick(0);
-        FFrameNumber EndTick = TickRes.AsFrameNumber(Animation->GetPlayLength());
-        EndTick = FMath::Max(StartTick + 1, EndTick - 1);
+        const FFrameNumber StartTick = requestedStartFrame;
+        FFrameNumber EndTick = sourceEndFrame >= sourceStartFrame
+            ? FFrameNumber(sourceEndFrame)
+            : StartTick + TickRes.AsFrameNumber(Animation->GetPlayLength());
+        EndTick = FMath::Max(StartTick + 1, EndTick);
 
         // no -1 adjustment, and use inclusive range
         MovieScene->SetPlaybackRange(TRange<FFrameNumber>::Inclusive(StartTick, EndTick));
         Section->SetRange(TRange<FFrameNumber>::Inclusive(StartTick, EndTick));
         Section->SetStartFrame(StartTick);
 
-        MovieScene->SetWorkingRange(-0.4f, Animation->GetPlayLength()+0.4f);
-        MovieScene->SetViewRange(-0.4f, Animation->GetPlayLength()+0.4f);
+        const double rangeStartSeconds = TickRes.AsSeconds(StartTick);
+        const double rangeEndSeconds = TickRes.AsSeconds(EndTick);
+        MovieScene->SetWorkingRange(rangeStartSeconds - 0.4, rangeEndSeconds + 0.4);
+        MovieScene->SetViewRange(rangeStartSeconds - 0.4, rangeEndSeconds + 0.4);
 
         UE_LOG(LogTemp, Display, TEXT("[ToucanSequencer] Trying to snap animation section using source timecode: %s"),
             *Section->TimecodeSource.Timecode.ToString());
@@ -931,6 +950,10 @@ UMovieSceneSection* FEditingSessionSequencerHelper::AddAnimationTrack(ULevelSequ
         if (!SnapResult.bSuccess)
         {
             UE_LOG(LogTemp, Warning, TEXT("[ToucanSequencer] Failed to snap animation section using SequencerAbstraction: %s"), *SnapResult.Error);
+        }
+        else if (Section->HasStartFrame() && Section->HasEndFrame())
+        {
+            MovieScene->SetPlaybackRange(Section->GetRange());
         }
     }
 
@@ -1563,7 +1586,9 @@ void FEditingSessionSequencerHelper::CreateOrUpdateBakedAnimMetadata(
 }
 
 bool FEditingSessionSequencerHelper::createBakedAnimMetadata(
-    UAnimSequence* bakedAnim)
+    UAnimSequence* bakedAnim,
+    const int32 startTrimFrame,
+    const int32 requestedEndTrimFrame)
 {
 #if WITH_EDITOR
     if (bakedAnim == nullptr)
@@ -1575,16 +1600,16 @@ bool FEditingSessionSequencerHelper::createBakedAnimMetadata(
     const int32 fps = samplingRate.AsDecimal() > 0.0
         ? FMath::RoundToInt(samplingRate.AsDecimal())
         : samplingRate.Numerator;
-    const int32 endTrimFrame = FMath::Max(
-        0,
-        bakedAnim->GetNumberOfSampledKeys() - 1);
+    const int32 endTrimFrame = requestedEndTrimFrame == INDEX_NONE
+        ? FMath::Max(0, bakedAnim->GetNumberOfSampledKeys() - 1)
+        : FMath::Max(startTrimFrame, requestedEndTrimFrame);
     const FString folder = FPackageName::GetLongPackagePath(
         bakedAnim->GetOutermost()->GetName());
     return saveBakedAnimMetadata(
         bakedAnim,
         folder,
         fps,
-        0,
+        startTrimFrame,
         endTrimFrame);
 #else
     return false;
