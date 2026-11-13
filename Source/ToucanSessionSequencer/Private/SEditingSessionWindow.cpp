@@ -611,7 +611,7 @@ TSharedRef<SWidget> SEditingSessionWindow::buildHandposeTimelineActions()
                     SNew(SButton)
                         .Text(FText::FromString(TEXT("Continue in Sequencer")))
                         .ToolTipText(FText::FromString(TEXT(
-                            "Use the HandposeTimeline result as the Sequencer input, or confirm continuing with the unchanged base animation when no handshapes are assigned.")))
+                            "Use the HandposeTimeline result as the Sequencer input, or confirm continuing with the unchanged base animation when no edits were made.")))
                         .IsEnabled(this, &SEditingSessionWindow::canContinueHandposeInSequencer)
                         .OnClicked(this, &SEditingSessionWindow::onContinueHandposeInSequencer)
                 ]
@@ -1720,7 +1720,7 @@ FReply SEditingSessionWindow::onContinueHandposeInSequencer()
     int32 trimStartFrame = 0;
     int32 trimEndFrame = 0;
     module->getPlaybackRange(trimStartFrame, trimEndFrame);
-    if (module->hasAssignments() || module->hasCustomPlaybackRange())
+    if (module->hasPendingChanges())
     {
         FString errorMessage;
         bool cancelled = false;
@@ -1744,10 +1744,10 @@ FReply SEditingSessionWindow::onContinueHandposeInSequencer()
         const EAppReturnType::Type response = FMessageDialog::Open(
             EAppMsgType::YesNo,
             FText::FromString(TEXT(
-                "No handshapes are assigned. Continue in Sequencer with the unchanged base animation?\n\n"
+                "No HandposeTimeline edits were made. Continue in Sequencer with the unchanged base animation?\n\n"
                 "Yes: Continue in Sequencer\n"
                 "No: Keep editing in HandposeTimeline")),
-            FText::FromString(TEXT("No Handshapes Assigned")));
+            FText::FromString(TEXT("No HandposeTimeline Edits")));
         if (response != EAppReturnType::Yes)
         {
             return FReply::Handled();
@@ -1829,7 +1829,7 @@ bool SEditingSessionWindow::canContinueHandposeInSequencer() const
         ? module->getLoadedAnimation()
         : nullptr;
     if (module == nullptr ||
-        ((module->hasAssignments() || module->hasCustomPlaybackRange()) &&
+        (module->hasPendingChanges() &&
             !module->canBakeCurrentAnimation()))
     {
         return false;
